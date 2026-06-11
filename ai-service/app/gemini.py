@@ -22,7 +22,7 @@ from typing import Any
 from .cache import get_cache, make_key
 from .metrics import record_llm_call
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "models/gemini-1.5-flash"
 
 _logger = logging.getLogger(__name__)
 
@@ -96,9 +96,8 @@ def _configure() -> Any | None:
 
 
 def generate_text(
-    *,
-    system: str,
     user: str,
+    system: str = "You are a helpful assistant.",
     temperature: float = 0.4,
     json_mode: bool = False,
 ) -> str | None:

@@ -237,121 +237,177 @@ class RAGService:
     def query(
         self,
         question: str,
-        top_k: int = 5,
+        top_k: int = 3,
     ) -> dict[str, Any]:
-        """Answer a question strictly from the recipe database using keyword filtering."""
+        """Answer a question strictly using recipes pulled from the vector database."""
         if not self._available:
-            return {
-                "success": False,
-                "answer": "RAG service is unavailable.",
-                "recipes": [],
-                "method": "unavailable",
-            }
+            return {"success": False, "answer": "RAG service is unavailable.", "recipes": []}
 
         if self._collection.count() == 0:
+            return {"success": True, "answer": "No recipes in the database yet.", "recipes": []}
+
+        question_lower = question.lower().strip()
+
+        # 1. Gather a list of all recipe titles currently in the database for checking
+        all_titles = [r.get("title", "") for r in self._recipes.values()]
+        all_titles_lower = [t.lower() for t in all_titles]
+
+        # ------------------------------------------------------------------
+        # 2. ORCHESTRATE SEARCH RETRIEVAL SCALE
+        # ------------------------------------------------------------------
+        broad_triggers = ["all", "list", "recipes", "database", "what do you have", "everything", "vegan", "vegetarian"]
+        is_broad_query = any(w in question_lower for w in broad_triggers)
+
+        # Check for an EXACT title match first
+        exact_match_recipe = None
+        if question_lower in all_titles_lower:
+            idx = all_titles_lower.index(question_lower)
+            exact_match_title = all_titles[idx]
+            # Find the full recipe dict from our stored dictionary
+            for r in self._recipes.values():
+                if r.get("title") == exact_match_title:
+                    exact_match_recipe = r
+                    break
+
+        if exact_match_recipe:
+            # FIX: If it's an exact match, ONLY pass this single recipe to Gemini!
+            retrieved_recipes = [exact_match_recipe]
+        else:
+            # Otherwise, use standard semantic vector retrieval
+            n_results = self._collection.count() if is_broad_query else top_k
+            retrieved_recipes = self._retrieve(question, n_results=n_results)
+
+        # ------------------------------------------------------------------
+        # 3. SMART KEYWORD FILTERING & INGREDIENT SNIFFING
+        # ------------------------------------------------------------------
+        has_partial_ingredient_match = False
+        matched_ingredient_name = ""
+
+        if retrieved_recipes and not is_broad_query and not exact_match_recipe:
+            stop_words = {"how", "to", "cook", "make", "recipe", "for", "steps", "instructions", "give", "me", "show", "what", "can", "i", "with", "curry", "dishes", "dish"}
+            search_keywords = [w for w in question_lower.split() if w not in stop_words and len(w) > 2]
+
+            if search_keywords:
+                filtered_matches = []
+                for r in retrieved_recipes:
+                    title = r.get("title", "").lower()
+
+                    raw_ingredients = r.get("ingredients", [])
+                    ingredients = [str(i).lower() for i in raw_ingredients] if isinstance(raw_ingredients, list) else [str(raw_ingredients).lower()]
+
+                    # Check if keyword matches title or ingredients
+                    keyword_in_title = any(kw in title for kw in search_keywords)
+                    keyword_in_ingredients = False
+
+                    for kw in search_keywords:
+                        for ing in ingredients:
+                            if kw in ing:
+                                keyword_in_ingredients = True
+                                matched_ingredient_name = kw
+                                break
+
+                    if keyword_in_title or keyword_in_ingredients:
+                        filtered_matches.append(r)
+                        if keyword_in_ingredients and not keyword_in_title:
+                            has_partial_ingredient_match = True
+
+                retrieved_recipes = filtered_matches
+
+        # Create a clean, comma-separated list of what we actually have in the database for Gemini to use
+        available_recipes_str = ", ".join(all_titles)
+
+        # If absolutely nothing matches, return the conversational indicator string showing what IS available
+        if not retrieved_recipes:
             return {
                 "success": True,
-                "answer": "No recipes in the database yet.",
+                "answer": f"Our database doesn't have any recipes matching your query. The recipes we currently have are: {available_recipes_str}.",
                 "recipes": [],
-                "method": "rag_empty",
+                "method": "rag_rejected"
             }
 
-        # Search all recipes for keyword matches
-        question_lower = question.lower()
-        matched = []
+        # ------------------------------------------------------------------
+        # 4. CALL GEMINI WITH REWRITTEN NON-MATCH & INGREDIENT INDICATORS
+        # ------------------------------------------------------------------
+        try:
+            from . import gemini as gemini_mod
+            if gemini_mod.is_available():
 
-        for recipe in self._recipes.values():
-            recipe_text = _recipe_to_text(recipe).lower()
-            if self._question_matches_recipe(question_lower, recipe_text, recipe):
-                matched.append(recipe)
+                context_str = ""
+                for r in retrieved_recipes:
+                    raw_inst = r.get("instructions") or r.get("steps") or []
+                    inst_str = " ".join(raw_inst) if isinstance(raw_inst, list) else str(raw_inst)
+                    raw_ing = r.get("ingredients") or []
+                    ing_str = ", ".join(raw_ing) if isinstance(raw_ing, list) else str(raw_ing)
 
-        if not matched:
-            return {
-                "success": True,
-                "answer": "Our database doesn't have any recipes matching your query.",
-                "recipes": [],
-                "method": "rag_no_match",
-            }
+                    context_str += f"Recipe: {r.get('title')}\n"
+                    context_str += f"Ingredients: {ing_str}\n"
+                    context_str += f"Instructions: {inst_str}\n\n"
 
-        matched = matched[:top_k]
-        answer, method = self._answer(question, matched)
+                system_instruction = (
+                    "You are a strict database assistant for MealMate.\n"
+                    f"The total available recipes physically stored in our database are: {available_recipes_str}.\n\n"
+                    "CRITICAL VISUAL & CONTENT RULES:\n"
+                    "1. Unless the user explicitly asks for 'ingredients', 'steps', 'instructions', or 'how to make/cook', you MUST ONLY output the titles/names of the recipes. Do not print ingredients or steps unless explicitly asked.\n"
+                    f"2. PARTIAL INGREDIENT MATCH RULE: If the user asked for a specific dish (like 'Chickpea Curry') that is NOT in the database, but one of the context recipes contains that ingredient (like chickpeas in Chicken Biryani), you MUST state: 'That specific recipe is not present in our database. However, the recipe [Insert Recipe Title] contains [Insert Ingredient Name].' Then ask if they want the steps for that recipe.\n"
+                    f"3. ABSOLUTE NON-MATCH RULE: If the query does not match anything in the context at all, you MUST say: 'Our database doesn't have any recipes matching your query. The recipes we currently have are: {available_recipes_str}.'\n"
+                    "4. TITLES SUPERSEDE INGREDIENTS: If a recipe has a meat keyword (chicken, pork, beef, bacon) in its TITLE, you are forbidden from calling it vegetarian or vegan under any circumstance.\n"
+                    "5. Do not hallucinate or guess outside the provided context."
+                )
+
+                # Append custom helper flags to guide the LLM's logic paths dynamically
+                user_prompt = f"Context Recipes:\n{context_str}\n"
+                if has_partial_ingredient_match:
+                    user_prompt += f"Note: The user's exact requested dish is missing, but a recipe contains the ingredient: '{matched_ingredient_name}'.\n"
+                user_prompt += f"User Question: {question}"
+
+                response = gemini_mod.generate_text(user=user_prompt, system=system_instruction)
+
+                if response:
+                    return {
+                        "success": True,
+                        "answer": response.strip(),
+                        "recipes": retrieved_recipes,
+                        "method": "rag_gemini"
+                    }
+        except Exception as exc:
+            logger.error(f"Gemini RAG generation failed: {exc}", exc_info=True)
+
+        # ------------------------------------------------------------------
+        # 5. SMART CONTEXT-AWARE FALLBACK
+        # ------------------------------------------------------------------
+        wants_steps = any(w in question_lower for w in ["steps", "instructions", "how to", "cook", "make"])
+        wants_ingredients = any(w in question_lower for w in ["ingredients", "need", "contains", "what's in"])
+
+        lines = []
+        if is_broad_query:
+            lines.append(f"The recipes we currently have are: {available_recipes_str}.")
+        elif has_partial_ingredient_match:
+            lines.append(f"That specific recipe is not present in our database. However, these recipes contain your ingredient:")
+        else:
+            lines.append("I found the following matching recipes:")
+
+        for r in retrieved_recipes:
+            lines.append(f"\n### {r.get('title')}")
+            raw_ing = r.get("ingredients") or []
+            ing_list_str = ", ".join(str(i) for i in raw_ing) if isinstance(raw_ing, list) else str(raw_ing)
+
+            if wants_ingredients:
+                lines.append(f"**Ingredients:** {ing_list_str}")
+            if wants_steps:
+                lines.append("**Steps:**")
+                raw_inst = r.get("instructions") or r.get("steps") or []
+                if isinstance(raw_inst, list):
+                    for j, step in enumerate(raw_inst, 1):
+                        lines.append(f"{j}. {step}")
+                else:
+                    lines.append(str(raw_inst))
 
         return {
             "success": True,
-            "answer": answer,
-            "recipes": matched,
-            "method": method,
+            "answer": "\n".join(lines),
+            "recipes": retrieved_recipes,
+            "method": "rag_fallback"
         }
-
-    @staticmethod
-    def _question_matches_recipe(
-        question: str,
-        recipe_text: str,
-        recipe: dict[str, Any],
-    ) -> bool:
-        """
-        Strict matching — checks if the recipe actually satisfies the question.
-        Handles dietary filters (veg, vegan, gluten-free etc.) as exclusion rules.
-        """
-        import re
-
-        # --- Dietary exclusion rules ---
-        # If user asks for veg/vegetarian, exclude meat recipes
-        meat_keywords = {"chicken", "beef", "pork", "lamb", "mutton", "turkey",
-                        "bacon", "sausage", "meat", "fish", "salmon", "tuna",
-                        "shrimp", "prawn", "anchovy", "anchovies"}
-
-        if any(w in question for w in ["veg ", "vegan", "vegetarian", "plant-based", "meatless"]):
-            if any(meat in recipe_text for meat in meat_keywords):
-                return False
-
-        # If user asks for non-veg/meat dishes, require meat
-        if any(w in question for w in ["non-veg", "meat", "chicken", "beef", "pork",
-                                        "fish", "seafood", "lamb"]):
-            if not any(meat in recipe_text for meat in meat_keywords):
-                return False
-
-        # --- Allergen exclusion ---
-        allergen_map = {
-            "gluten-free": {"flour", "bread", "pasta", "wheat", "barley", "rye"},
-            "dairy-free": {"milk", "cream", "butter", "cheese", "yogurt", "parmesan"},
-            "nut-free": {"almond", "walnut", "peanut", "cashew", "pecan", "hazelnut"},
-            "egg-free": {"egg", "eggs"},
-        }
-        for diet, allergens in allergen_map.items():
-            if diet in question:
-                if any(a in recipe_text for a in allergens):
-                    return False
-
-        # --- Positive keyword match ---
-        # Extract meaningful words from question (ignore common words)
-        stop_words = {
-            "what", "which", "does", "have", "with", "that", "this", "are",
-            "the", "for", "can", "tell", "about", "from", "use", "using",
-            "show", "give", "list", "find", "recipe", "recipes", "steps",
-            "step", "how", "make", "cook", "instructions", "please", "you",
-            "your", "me", "my", "get", "its", "any", "all", "some", "and",
-            "or", "is", "in", "a", "an", "to", "of", "do", "i", "want",
-            "need", "dish", "meal", "food", "eat", "veg", "vegan", "vegetarian",
-            "non-veg", "gluten-free", "dairy-free", "nut-free", "egg-free",
-            "plant-based", "meatless",
-        }
-
-        keywords = [
-            w for w in re.split(r'\W+', question)
-            if len(w) > 2 and w not in stop_words
-        ]
-
-        # If no meaningful keywords remain after filtering dietary terms,
-        # return True — it's a pure dietary filter query (e.g. "veg recipes")
-        if not keywords:
-            return True
-
-        # Check if ANY keyword matches the recipe
-        return any(
-            re.search(rf'\b{re.escape(kw)}\b', recipe_text)
-            for kw in keywords
-        )
 
     def _answer(
         self,
@@ -362,25 +418,27 @@ class RAGService:
         try:
             from . import gemini as gemini_mod
             if gemini_mod.is_available():
+                # Build the complete text context containing the matching recipes
                 prompt = self._build_query_prompt(question, recipes)
+
+                # Forward to the updated positional generate_text endpoint layout
                 response = gemini_mod.generate_text(prompt)
+
                 if response:
                     return response, "rag_gemini"
         except Exception as exc:
             logger.warning("rag_answer_gemini_failed", extra={"error": str(exc)})
 
-        # Context-aware fallback
+        # Context-aware fallback loop (runs when Gemini module fails or is unavailable)
         question_lower = question.lower()
         lines = []
 
-        # Detect what the user is asking for
         wants_steps = any(w in question_lower for w in [
             "steps", "instructions", "how to", "how do", "cook", "make", "prepare", "method"
         ])
         wants_ingredients = any(w in question_lower for w in [
             "ingredients", "what do i need", "what does it need", "what's in"
         ])
-        # Default — general recipe info
 
         for r in recipes:
             lines.append(f"### {r.get('title')}")
@@ -404,7 +462,6 @@ class RAGService:
                     lines.append("_No ingredients available._")
 
             else:
-                # General — show both
                 ingredients = r.get("ingredients", [])
                 instructions = r.get("instructions", [])
                 if ingredients:
@@ -418,6 +475,71 @@ class RAGService:
 
         return "\n".join(lines), "rag_fallback"
 
+    # def _answer(
+    #     self,
+    #     question: str,
+    #     recipes: list[dict[str, Any]],
+    # ) -> tuple[str, str]:
+    #     """Answer a question using ONLY the retrieved recipes as context."""
+    #     try:
+    #         from . import gemini as gemini_mod
+    #         if gemini_mod.is_available():
+    #             prompt = self._build_query_prompt(question, recipes)
+    #             response = gemini_mod.generate_text(prompt)
+    #             if response:
+    #                 return response, "rag_gemini"
+    #     except Exception as exc:
+    #         logger.warning("rag_answer_gemini_failed", extra={"error": str(exc)})
+
+    #     # Context-aware fallback
+    #     question_lower = question.lower()
+    #     lines = []
+
+    #     # Detect what the user is asking for
+    #     wants_steps = any(w in question_lower for w in [
+    #         "steps", "instructions", "how to", "how do", "cook", "make", "prepare", "method"
+    #     ])
+    #     wants_ingredients = any(w in question_lower for w in [
+    #         "ingredients", "what do i need", "what does it need", "what's in"
+    #     ])
+    #     # Default — general recipe info
+
+    #     for r in recipes:
+    #         lines.append(f"### {r.get('title')}")
+
+    #         if wants_steps:
+    #             instructions = r.get("instructions", [])
+    #             if instructions:
+    #                 lines.append("**Steps:**")
+    #                 for j, step in enumerate(instructions, 1):
+    #                     lines.append(f"{j}. {step}")
+    #             else:
+    #                 lines.append("_No steps available for this recipe._")
+
+    #         elif wants_ingredients:
+    #             ingredients = r.get("ingredients", [])
+    #             if ingredients:
+    #                 lines.append("**Ingredients:**")
+    #                 for ing in ingredients:
+    #                     lines.append(f"- {ing}")
+    #             else:
+    #                 lines.append("_No ingredients available._")
+
+    #         else:
+    #             # General — show both
+    #             ingredients = r.get("ingredients", [])
+    #             instructions = r.get("instructions", [])
+    #             if ingredients:
+    #                 lines.append(f"**Ingredients:** {', '.join(str(i) for i in ingredients)}")
+    #             if instructions:
+    #                 lines.append("**Steps:**")
+    #                 for j, step in enumerate(instructions, 1):
+    #                     lines.append(f"{j}. {step}")
+
+    #         lines.append("")
+
+    #     return "\n".join(lines), "rag_fallback"
+
     @staticmethod
     def _build_query_prompt(
         question: str,
@@ -426,7 +548,7 @@ class RAGService:
         recipe_summaries = []
         for i, r in enumerate(recipes, 1):
             ingredients = r.get("ingredients", [])
-            instructions = r.get("instructions", [])  # ← inside the loop
+            instructions = r.get("instructions", [])
             recipe_summaries.append(
                 f"{i}. **{r.get('title', 'Unknown')}** "
                 f"(cuisine: {r.get('cuisine', 'unknown')})\n"
@@ -434,24 +556,23 @@ class RAGService:
                 f"   Steps: {' | '.join(str(s) for s in instructions[:5])}"
             )
 
-        recipes_text = "\n".join(recipe_summaries)
+        recipes_text = "\n\n".join(recipe_summaries)
 
-        return f"""You are a recipe assistant for MealMate. The recipes below are FROM our database.
+        return f"""You are a conversational culinary assistant for MealMate.
+The recipes provided below are extracted directly from our local database.
 
-        Answer the user's question using ONLY these recipes. Present your answer clearly and confidently.
-        Do NOT say the information is unavailable — if the recipes below contain the answer, provide it directly.
-        Only say you cannot answer if the recipes truly contain no relevant information.
+Instructions:
+1. Answer the user's question friendly and naturally using the provided recipes.
+2. If the user asks for "vegan" or "vegetarian" options, analyze the ingredient compositions. If a recipe uses plant-based alternatives (like plant-based yogurt, chickpeas, mushrooms) instead of real meat, highlight it as a viable option!
+3. If the user asks a broad question like "What recipes are in the database?", summarize and list the titles of the available options nicely.
+4. Keep answers concise, helpful, and strictly tied to these recipes.
 
-    Recipes from our database:
+Recipes from our database:
+{recipes_text}
 
-    {recipes_text}
+User question: {question}
 
-    User question: {question}
-
-    Answer based strictly on the recipes above. Be concise, friendly, and confident.
-    If the question is about user profile data (allergies, preferences, account) rather than recipes,
-    politely explain that this Q&A only covers recipes in the database and suggest they check their
-    Pantry & Preferences page instead."""
+Answer:"""
 
     # ------------------------------------------------------------------
     # Private: retrieve
