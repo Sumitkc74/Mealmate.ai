@@ -411,3 +411,101 @@ export async function recordInteractions(recipeIds: string[]): Promise<Interacti
     throw err;
   }
 }
+
+// ---------------------------------------------------------------------------
+// RAG recipe suggester
+// ---------------------------------------------------------------------------
+
+export interface RAGRecipe {
+  id: string;
+  title: string;
+  cuisine: string;
+  ingredients: string[];
+  tags: string[];
+  similarity_score: number;
+}
+
+export interface RAGSuggestResponse {
+  success: boolean;
+  suggestion: string;
+  recipes: RAGRecipe[];
+  method: string;
+  rag_available: boolean;
+}
+
+export async function ragSuggest(payload: {
+  pantry: string[];
+  dietary_preferences?: string[];
+  allergies?: string[];
+  top_k?: number;
+}): Promise<RAGSuggestResponse> {
+  try {
+    const { data } = await getClient().post<RAGSuggestResponse>(
+      '/rag/suggest',
+      payload,
+      { timeout: 30_000 }
+    );
+    return data;
+  } catch (err) {
+    logger.error({ err }, 'AI service rag/suggest call failed');
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// RAG recipe Q&A
+// ---------------------------------------------------------------------------
+
+export interface RAGQueryResponse {
+  success: boolean;
+  answer: string;
+  recipes: RAGRecipe[];
+  method: string;
+  rag_available: boolean;
+}
+
+export async function ragQuery(payload: {
+  question: string;
+  top_k?: number;
+}): Promise<RAGQueryResponse> {
+  try {
+    const { data } = await getClient().post<RAGQueryResponse>(
+      '/rag/query',
+      payload,
+      { timeout: 30_000 }
+    );
+    return data;
+  } catch (err) {
+    logger.error({ err }, 'AI service rag/query call failed');
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// RAG index sync — push MongoDB recipes into ChromaDB
+// ---------------------------------------------------------------------------
+
+export interface RAGIndexResponse {
+  success: boolean;
+  indexed: number;
+}
+
+export async function ragIndex(recipes: {
+  id: string;
+  title: string;
+  cuisine?: string;
+  ingredients: string[];
+  tags: string[];
+}[]): Promise<RAGIndexResponse> {
+  try {
+    const { data } = await getClient().post<RAGIndexResponse>(
+      '/rag/index',
+      { recipes },
+      { timeout: 60_000 }
+    );
+    return data;
+  } catch (err) {
+    logger.error({ err }, 'AI service rag/index call failed');
+    throw err;
+  }
+}

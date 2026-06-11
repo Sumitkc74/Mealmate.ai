@@ -16,6 +16,8 @@ import {
   parsePantryImage,
   parsePantryText,
   recordInteractions,
+  ragSuggest,
+  ragQuery,
   type PlannerObjective,
   type RecommendStrategy,
 } from '../services/aiClient';
@@ -344,6 +346,76 @@ router.post(
     const { recipe_ids } = req.body as z.infer<typeof interactionsSchema>;
     try {
       const result = await recordInteractions(recipe_ids);
+      res.json(result);
+    } catch {
+      throw new AppError('AI service unavailable', 503);
+    }
+  })
+);
+
+// ---------------------------------------------------------------------------
+// RAG recipe suggester
+// ---------------------------------------------------------------------------
+
+const ragSuggestSchema = z.object({
+  pantry: z.array(z.string().trim()).optional(),
+  dietary_preferences: z.array(z.string().trim()).optional(),
+  allergies: z.array(z.string().trim()).optional(),
+  top_k: z.number().int().min(1).max(20).default(5),
+  useProfile: z.boolean().default(true),
+});
+
+router.post(
+  '/rag/suggest',
+  protect,
+  validate({ body: ragSuggestSchema }),
+  asyncHandler(async (req, res) => {
+    if (!req.user) throw AppError.unauthorized();
+    const body = req.body as z.infer<typeof ragSuggestSchema>;
+
+    let pantry = body.pantry ?? [];
+    let prefs = body.dietary_preferences ?? [];
+    let allergies = body.allergies ?? [];
+
+    if (body.useProfile) {
+      const user = await User.findById(req.user.sub);
+      if (pantry.length === 0) pantry = user?.pantry?.map((p) => p.ingredient) ?? [];
+      if (prefs.length === 0) prefs = user?.dietaryPreferences ?? [];
+      if (allergies.length === 0) allergies = user?.allergies ?? [];
+    }
+
+    if (pantry.length === 0) {
+      throw AppError.badRequest('Add pantry items before requesting suggestions');
+    }
+
+    try {
+      const result = await ragSuggest({
+        pantry,
+        dietary_preferences: prefs,
+        allergies,
+        top_k: body.top_k,
+      });
+      res.json(result);
+    } catch {
+      throw new AppError('AI service unavailable', 503);
+    }
+  })
+);
+
+const ragQuerySchema = z.object({
+  question: z.string().trim().min(1).max(500),
+  top_k: z.number().int().min(1).max(10).default(5),
+});
+
+router.post(
+  '/rag/query',
+  protect,
+  validate({ body: ragQuerySchema }),
+  asyncHandler(async (req, res) => {
+    if (!req.user) throw AppError.unauthorized();
+    const { question, top_k } = req.body as z.infer<typeof ragQuerySchema>;
+    try {
+      const result = await ragQuery({ question, top_k });
       res.json(result);
     } catch {
       throw new AppError('AI service unavailable', 503);

@@ -10,6 +10,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from . import rag as rag_mod
+from .rag import init_rag, get_rag
+
 from fastapi import Depends, FastAPI, HTTPException
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -43,6 +46,12 @@ from .schemas import (
     RecommendResponse,
     SimilarRequest,
     SimilarResponse,
+    RAGSuggestRequest,
+    RAGSuggestResponse,
+    RAGQueryRequest,
+    RAGQueryResponse,
+    RAGIndexRequest,
+    RAGIndexResponse,
 )
 from .sustainability import compute_recipe_footprint
 
@@ -58,6 +67,22 @@ async def lifespan(_app: FastAPI):
         gemini=gemini.is_available(),
     )
     get_recommender()
+
+    # Initialise RAG — pass the recommender's recipe list so we don't load data twice.
+    rec = get_recommender()
+    recipes_for_rag = [
+        {
+            "id": r.recipe_id,        # ← recipe_id not id
+            "title": r.title,
+            "cuisine": r.cuisine or "",
+            "ingredients": list(r.ingredients),
+            "tags": list(r.tags),
+        }
+        for r in rec.recipes          # ← rec.recipes is the list property
+    ]
+    init_rag([])
+    logger.info("rag_initialised_empty: waiting for MongoDB sync")
+
     yield
     logger.info("ai_service_stopping")
 
@@ -185,6 +210,77 @@ def create_app() -> FastAPI:
     @app.post("/chat", response_model=ChatResponse, tags=["assistant"])
     def chat(payload: ChatRequest) -> ChatResponse:
         return chat_service.reply(payload)
+
+    @app.post("/rag/suggest", response_model=RAGSuggestResponse, tags=["rag"])
+    def rag_suggest(payload: RAGSuggestRequest) -> RAGSuggestResponse:
+        """
+        RAG-powered recipe suggestion.
+
+        Pipeline:
+          1. Embed pantry + preferences into a vector query
+          2. Retrieve semantically similar recipes from ChromaDB
+          3. Hard-filter any recipe containing an allergen
+          4. Pass retrieved recipes + context to Gemini for a natural suggestion
+          5. Falls back to ranked results if Gemini is not configured
+        """
+        rag = get_rag()
+        if rag is None:
+            return RAGSuggestResponse(
+                success=False,
+                suggestion="RAG service not initialised.",
+                recipes=[],
+                method="unavailable",
+                rag_available=False,
+            )
+
+        result = rag.suggest(
+            pantry=payload.pantry,
+            dietary_preferences=payload.dietary_preferences,
+            allergies=payload.allergies,
+            top_k=payload.top_k,
+        )
+
+        return RAGSuggestResponse(
+            success=result["success"],
+            suggestion=result["suggestion"],
+            recipes=result["recipes"],
+            method=result["method"],
+            rag_available=rag.is_available,
+        )
+
+    @app.post("/rag/query", response_model=RAGQueryResponse, tags=["rag"])
+    def rag_query(payload: RAGQueryRequest) -> RAGQueryResponse:
+        """Answer questions strictly from the recipe database."""
+        svc = rag_mod._rag_service
+        if svc is None:
+            return RAGQueryResponse(
+                success=False,
+                answer="RAG service not initialised.",
+                recipes=[],
+                method="unavailable",
+                rag_available=False,
+            )
+        result = svc.query(
+            question=payload.question,
+            top_k=payload.top_k,
+        )
+        return RAGQueryResponse(
+            success=result["success"],
+            answer=result["answer"],
+            recipes=result["recipes"],
+            method=result["method"],
+            rag_available=svc.is_available,
+        )
+
+    @app.post("/rag/index", response_model=RAGIndexResponse, tags=["rag"])
+    def rag_index(payload: RAGIndexRequest) -> RAGIndexResponse:
+        """Re-index ChromaDB with a fresh recipe set from MongoDB."""
+        svc = rag_mod._rag_service
+        if svc is None:
+            return RAGIndexResponse(success=False, indexed=0)
+        recipes = [r.model_dump() for r in payload.recipes]
+        count = svc.reindex(recipes)
+        return RAGIndexResponse(success=count > 0, indexed=count)
 
     @app.post(
         "/recipes/generate",

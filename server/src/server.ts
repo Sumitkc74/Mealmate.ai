@@ -1,3 +1,4 @@
+import { syncRecipesToRag } from './services/ragSync';
 import { createApp } from './app';
 import { connectDB, disconnectDB } from './config/db';
 import { env } from './config/env';
@@ -13,6 +14,10 @@ async function bootstrap() {
   });
 
   initRealtime(server);
+
+  // Sync MongoDB recipes into RAG index after startup
+  // Small delay to ensure AI service is ready
+  setTimeout(() => void syncRecipesToRag(), 8000);
 
   const shutdown = async (signal: string) => {
     logger.info(`Received ${signal} — shutting down gracefully`);

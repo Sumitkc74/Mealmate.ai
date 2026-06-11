@@ -381,3 +381,47 @@ class InteractionRecordRequest(BaseModel):
 class InteractionRecordResponse(BaseModel):
     success: bool = True
     pairs: int
+
+class RAGSuggestRequest(BaseModel):
+    pantry: list[str] = Field(
+        ...,
+        description="Ingredients available (from manual entry or pantry vision scan)",
+        example=["turkey", "rice", "broccoli", "garlic", "olive oil"],
+    )
+    dietary_preferences: list[str] = Field(default=[])
+    allergies: list[str] = Field(default=[])
+    top_k: int = Field(default=5, ge=1, le=20)
+
+
+class RAGSuggestResponse(BaseModel):
+    success: bool
+    suggestion: str
+    recipes: list[dict]
+    method: str
+    rag_available: bool
+
+class RAGQueryRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=500)
+    top_k: int = Field(default=5, ge=1, le=10)
+
+class RAGQueryResponse(BaseModel):
+    success: bool
+    answer: str
+    recipes: list[dict]
+    method: str
+    rag_available: bool
+
+class RAGIndexRecipe(BaseModel):
+    id: str
+    title: str
+    cuisine: str = ""
+    ingredients: list[str] = []
+    tags: list[str] = []
+    instructions: list[str] = []
+
+class RAGIndexRequest(BaseModel):
+    recipes: list[RAGIndexRecipe]
+
+class RAGIndexResponse(BaseModel):
+    success: bool
+    indexed: int

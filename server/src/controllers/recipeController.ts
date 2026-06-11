@@ -1,3 +1,4 @@
+import { syncRecipesToRag } from '../services/ragSync';
 import type { FilterQuery, SortOrder } from 'mongoose';
 import { Recipe, type IRecipe } from '../models/Recipe';
 import { AppError } from '../utils/AppError';
@@ -116,6 +117,7 @@ export const generateRecipe = asyncHandler<unknown, unknown, GenerateRecipeInput
       usedQuery,
       generated: true,
     });
+    void syncRecipesToRag();
   }
 );
 
@@ -136,6 +138,7 @@ export const updateRecipe = asyncHandler<{ id: string }, unknown, UpdateRecipeIn
     Object.assign(recipe, req.body);
     await recipe.save();
     res.json({ success: true, recipe });
+    void syncRecipesToRag();
   }
 );
 
@@ -154,4 +157,5 @@ export const deleteRecipe = asyncHandler<{ id: string }>(async (req, res) => {
 
   await recipe.deleteOne();
   res.json({ success: true, message: 'Recipe deleted' });
+  void syncRecipesToRag();
 });

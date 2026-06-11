@@ -21,3 +21,7 @@ prometheus_client>=0.20
 # The SDK is imported lazily so the service still runs without it; only
 # required when GEMINI_API_KEY is set and you want LLM-backed features.
 google-generativeai>=0.8
+
+# RAG dependencies
+chromadb>=0.5
+sentence-transformers>=3.0

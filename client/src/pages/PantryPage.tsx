@@ -7,6 +7,7 @@ import { extractErrorMessage } from '@/lib/api';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SmartPantryPaste } from '@/components/pantry/SmartPantryPaste';
 import { FridgePhotoUploader } from '@/components/pantry/FridgePhotoUploader';
+import { RagRecipeSuggester } from '@/components/pantry/RagRecipeSuggester';
 import type { PantryItem } from '@/types';
 
 export function PantryPage() {
@@ -140,6 +141,12 @@ export function PantryPage() {
           }}
         />
       </div>
+
+      <RagRecipeSuggester
+        pantry={user.pantry}
+        dietaryPreferences={user.dietaryPreferences ?? []}
+        allergies={user.allergies ?? []}
+      />
 
       <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900">In your pantry</h2>
