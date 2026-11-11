@@ -1,0 +1,49 @@
+services:
+  # Express API server (MongoDB via Atlas, AI via ai-service below).
+  # Native Node runtime so Render's $PORT is honoured.
+  - type: web
+    name: mealmate-server
+    runtime: node
+    rootDir: server
+    plan: free
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "5000"
+      - key: MONGO_URI
+        sync: false # Atlas connection string, ends in /test — set in Render dashboard
+      - key: JWT_SECRET
+        generateValue: true # Render generates a strong random secret once
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: AI_SERVICE_URL
+        sync: false # Set after first deploy: https://mealmate-ai-service.onrender.com
+      - key: CORS_ORIGIN
+        sync: false # Set after Vercel deploy: https://<mealmate-client>.vercel.app
+      - key: LOG_LEVEL
+        value: info
+
+  # FastAPI AI microservice. Native Python runtime so it binds to Render's $PORT.
+  - type: web
+    name: mealmate-ai-service
+    runtime: python
+    rootDir: ai-service
+    plan: free
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: GEMINI_API_KEY
+        sync: false # Optional — all LLM surfaces fall back offline without it
+      - key: ALLOWED_ORIGINS
+        sync: false # Set after Vercel deploy: Vercel URL + server URL, comma-separated
