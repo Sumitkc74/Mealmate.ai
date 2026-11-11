@@ -1,11 +1,12 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
-import type { PantryItem, User } from '@/types';
+import type { PantryItem, User, CookingHistoryEntry } from '@/types';
 
 interface UpdateProfileInput {
   name?: string;
   pantry?: PantryItem[];
+  cookingHistory?: CookingHistoryEntry[];
   dietaryPreferences?: string[];
   allergies?: string[];
 }

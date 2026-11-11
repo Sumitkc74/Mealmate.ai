@@ -39,6 +39,16 @@ AI-powered meal planning, pantry tracking, smart grocery list generation, and nu
 - **Gemini cooking assistant** — floating chat widget available everywhere once you log in. Multi-turn, profile-aware (knows your pantry, preferences and allergies), with auto-generated follow-up suggestion chips. Falls back to a deterministic offline reply when no API key is configured.
 - **Smart pantry paste** — paste freeform text (“half a red onion, 200 g chicken breast, leftover rice…”) and the AI service extracts structured ingredient/quantity/unit triples. Gemini path when configured, regex/keyword fallback otherwise — always works offline.
 
+### Legal, Privacy & Compliance (GDPR / CCPA / COPPA)
+- **Data Subject Rights & Portability** — dedicated self-service portal at `/privacy/manage` with single-click GDPR Art. 15 / 20 / CCPA machine-readable JSON data export (`GET /api/auth/me/export`) and GDPR Art. 17 cascading erasure (`DELETE /api/auth/me`) wiping user profiles, meal plans, grocery lists, and recipes.
+- **Sensitive Dietary Consent** — explicit opt-in checkboxes for processing health-adjacent dietary preferences and allergen profiles under GDPR Art. 9(2)(a).
+- **Age Restriction Enforcement** — mandatory COPPA (13+) and EEA GDPR (16+) age gating on account registration.
+- **Cookie & Storage Consent Banner** — GDPR / ePrivacy Directive compliant cookie consent dialog with fine-grained category controls (Necessary, Analytics, Preferences, Marketing) and persistent preference re-opening.
+- **Medical & Dietetic Disclaimers** — non-medical advice warning banners across Recipe Details, Nutrition Dashboard, and AI Assistant clarifying that meal suggestions do not constitute licensed medical or dietitian care.
+- **Open Source License Catalog** — transparent third-party attribution portal at `/attributions` documenting all MIT, Apache 2.0, and BSD-3 dependencies.
+- **FTC Claim Substantiation** — documented offline benchmark citations (`NDCG@10`) for homepage recommendation claims.
+- **Audit Documentation** — comprehensive regulatory evaluation matrix in [`docs/LEGAL_COMPLIANCE_AUDIT.md`](docs/LEGAL_COMPLIANCE_AUDIT.md).
+
 ---
 
 ## 🏗️ Architecture

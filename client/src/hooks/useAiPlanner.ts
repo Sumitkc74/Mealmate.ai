@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { useAuthStore } from '@/stores/authStore';
 
 // ---------------------------------------------------------------------------
 // Shared union types matching the AI service
@@ -202,6 +203,67 @@ export function useAssistantChat() {
       }
     },
   });
+}
+
+export async function streamAssistantChat(
+  vars: {
+    messages: ChatMessage[];
+    recipe_context?: string;
+  },
+  callbacks: {
+    onToken: (chunk: string) => void;
+    onDone: (data: ChatResponse) => void;
+    onError: (err: unknown) => void;
+  }
+): Promise<void> {
+  const token = useAuthStore.getState().token;
+  const baseUrl = import.meta.env.VITE_API_URL ?? '/api';
+  const response = await fetch(`${baseUrl}/ai/chat/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      messages: vars.messages,
+      recipe_context: vars.recipe_context,
+      useProfile: true,
+    }),
+  });
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Stream request failed: ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const payload = JSON.parse(line.slice(6));
+          if (payload.type === 'token' && typeof payload.chunk === 'string') {
+            callbacks.onToken(payload.chunk);
+          } else if (payload.type === 'done') {
+            callbacks.onDone(payload as ChatResponse);
+          }
+        } catch {
+          // ignore malformed chunk
+        }
+      }
+    }
+  } catch (err) {
+    callbacks.onError(err);
+  }
 }
 
 // ---------------------------------------------------------------------------

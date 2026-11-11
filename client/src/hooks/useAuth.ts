@@ -12,6 +12,9 @@ interface RegisterInput {
   name: string;
   email: string;
   password: string;
+  termsAccepted?: boolean;
+  dietaryConsent?: boolean;
+  marketingOptIn?: boolean;
 }
 
 export function useLogin() {

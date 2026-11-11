@@ -11,9 +11,18 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { correlationId } from './middleware/correlationId';
 import { metricsHandler, metricsMiddleware } from './middleware/metrics';
 import { installSwagger } from './utils/swagger';
+import authRoutes from './routes/authRoutes';
+import recipeRoutes from './routes/recipeRoutes';
+import mealPlanRoutes from './routes/mealPlanRoutes';
+import groceryRoutes from './routes/groceryRoutes';
+import nutritionRoutes from './routes/nutritionRoutes';
+import aiRoutes from './routes/aiRoutes';
 
 export function createApp(): Express {
   const app = express();
+
+  // Trust first-hop reverse proxy (Kubernetes Ingress / Nginx) for accurate client IP resolution in rateLimit
+  app.set('trust proxy', 1);
 
   // Security & infra middleware
   app.use(helmet());
@@ -25,8 +34,10 @@ export function createApp(): Express {
     })
   );
   app.use(compression());
-  app.use(express.json({ limit: '10mb' })); // larger limit to accept base64 fridge photos
-  app.use(express.urlencoded({ extended: true }));
+  // Scoped body parsing: 10mb limit reserved strictly for fridge photo vision analysis; 1mb globally to prevent memory exhaustion DoS
+  app.use('/api/ai/pantry/vision', express.json({ limit: '10mb' }));
+  app.use(express.json({ limit: '1mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
   // Observability: correlation IDs first so logs + metrics can reference them.
   app.use(correlationId());
@@ -76,18 +87,12 @@ export function createApp(): Express {
   installSwagger(app);
 
   // Feature routes
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  app.use('/api/auth', require('./routes/authRoutes').default);
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  app.use('/api/recipes', require('./routes/recipeRoutes').default);
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  app.use('/api/mealplans', require('./routes/mealPlanRoutes').default);
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  app.use('/api/grocery', require('./routes/groceryRoutes').default);
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  app.use('/api/nutrition', require('./routes/nutritionRoutes').default);
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  app.use('/api/ai', require('./routes/aiRoutes').default);
+  app.use('/api/auth', authRoutes);
+  app.use('/api/recipes', recipeRoutes);
+  app.use('/api/mealplans', mealPlanRoutes);
+  app.use('/api/grocery', groceryRoutes);
+  app.use('/api/nutrition', nutritionRoutes);
+  app.use('/api/ai', aiRoutes);
 
   // 404 + error handler (always last)
   app.use(notFoundHandler);

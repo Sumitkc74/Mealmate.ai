@@ -82,6 +82,28 @@ export function useCreateRecipe() {
   });
 }
 
+export interface BulkCreateRecipesResult {
+  success: true;
+  count: number;
+  recipes: Recipe[];
+}
+
+export function useBulkCreateRecipes() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (recipes: RecipeInput[]): Promise<BulkCreateRecipesResult> => {
+      const { data } = await api.post<BulkCreateRecipesResult>('/recipes/bulk', { recipes });
+      return {
+        ...data,
+        recipes: data.recipes.map(normalize),
+      };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['recipes'] });
+    },
+  });
+}
+
 export function useUpdateRecipe(id: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -113,6 +135,7 @@ export interface GenerateRecipeInput {
   query: string;
   dietaryPreferences?: string[];
   allergies?: string[];
+  save?: boolean;
 }
 
 export interface GenerateRecipeResult {
@@ -152,3 +175,69 @@ export function useGenerateRecipe() {
     },
   });
 }
+
+export interface RecipeVerificationIssue {
+  severity: 'error' | 'warning' | 'info';
+  category: 'safety' | 'edibility' | 'coherence' | 'instructions' | 'completeness' | 'allergen';
+  message: string;
+  field?: string;
+}
+
+export interface VerifyRecipeInput {
+  title: string;
+  description?: string;
+  cuisine?: string;
+  ingredients: Array<{ name: string; quantity?: number; unit?: string }>;
+  instructions: string[];
+  prepTime?: number;
+  cookTime?: number;
+  servings?: number;
+}
+
+export interface VerifyRecipeResponse {
+  success: boolean;
+  is_valid: boolean;
+  score: number;
+  verdict: 'verified' | 'needs_review' | 'rejected';
+  summary: string;
+  issues: RecipeVerificationIssue[];
+  detected_allergens: string[];
+  suggestions: string[];
+}
+
+export function useVerifyRecipe() {
+  return useMutation({
+    mutationFn: async (input: VerifyRecipeInput): Promise<VerifyRecipeResponse> => {
+      const { data } = await api.post<VerifyRecipeResponse>('/recipes/verify', input);
+      return data;
+    },
+  });
+}
+
+export interface EstimateNutritionInput {
+  title?: string;
+  ingredients: Array<{ name: string; quantity?: number; unit?: string }>;
+  servings?: number;
+}
+
+export interface EstimateNutritionResponse {
+  success: boolean;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  fiber?: number;
+  sodium?: number;
+  servings: number;
+}
+
+export function useEstimateNutrition() {
+  return useMutation({
+    mutationFn: async (input: EstimateNutritionInput): Promise<EstimateNutritionResponse> => {
+      const { data } = await api.post<EstimateNutritionResponse>('/recipes/estimate-nutrition', input);
+      return data;
+    },
+  });
+}
+
+

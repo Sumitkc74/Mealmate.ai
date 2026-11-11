@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mealmate
+  labels:
+    app.kubernetes.io/name: mealmate
+    app.kubernetes.io/part-of: mealmate-platform
+    environment: production
+

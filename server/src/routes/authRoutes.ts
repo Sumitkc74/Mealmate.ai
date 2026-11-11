@@ -1,6 +1,13 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { register, login, me, updateProfile } from '../controllers/authController';
+import {
+  register,
+  login,
+  me,
+  updateProfile,
+  exportData,
+  deleteAccount,
+} from '../controllers/authController';
 import { validate } from '../middleware/validate';
 import { protect } from '../middleware/authMiddleware';
 import { registerSchema, loginSchema, updateProfileSchema } from '../validators/authSchemas';
@@ -20,5 +27,7 @@ router.post('/register', authLimiter, validate({ body: registerSchema }), regist
 router.post('/login', authLimiter, validate({ body: loginSchema }), login);
 router.get('/me', protect, me);
 router.patch('/me', protect, validate({ body: updateProfileSchema }), updateProfile);
+router.get('/me/export', protect, exportData);
+router.delete('/me', protect, deleteAccount);
 
 export default router;

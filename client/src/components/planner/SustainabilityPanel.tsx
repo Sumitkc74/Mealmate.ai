@@ -20,13 +20,13 @@ export function SustainabilityPanel({ plan }: Props) {
   const eco = s.eco_score;
 
   return (
-    <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+    <section className="rounded-lg border border-line bg-card p-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-lg font-semibold text-gray-900">
-          <span aria-hidden>🌱 </span>Sustainability
+        <h2 className="text-lg font-serif font-semibold text-text">
+          Sustainability
         </h2>
-        <p className="text-xs text-gray-500">
-          Objective <span className="font-medium text-gray-700">{plan.objective ?? 'balanced'}</span>{' '}
+        <p className="text-xs text-text-muted">
+          Objective <span className="font-medium text-text">{plan.objective ?? 'balanced'}</span>{' '}
           · {s.meals} meals
         </p>
       </div>
@@ -43,14 +43,14 @@ export function SustainabilityPanel({ plan }: Props) {
 
       {plan.days.some((d) => typeof d.co2_kg === 'number') && (
         <div className="mt-5">
-          <h3 className="text-sm font-medium text-gray-900">Daily breakdown</h3>
-          <ul className="mt-2 divide-y divide-gray-100 text-sm">
+          <h3 className="text-sm font-medium text-text">Daily breakdown</h3>
+          <ul className="mt-2 divide-y divide-line text-sm">
             {plan.days.map((d) => (
               <li key={d.day} className="flex items-center justify-between py-1.5">
-                <span className="capitalize text-gray-700">{d.day}</span>
-                <span className="text-xs text-gray-500">
-                  {typeof d.co2_kg === 'number' ? `${d.co2_kg.toFixed(1)} kg CO₂` : '—'} ·{' '}
-                  {typeof d.cost_usd === 'number' ? `$${d.cost_usd.toFixed(2)}` : '—'}
+                <span className="capitalize text-text">{d.day}</span>
+                <span className="text-xs font-mono text-text-muted">
+                  {typeof d.co2_kg === 'number' ? `${d.co2_kg.toFixed(1)} kg CO₂` : '-'} ·{' '}
+                  {typeof d.cost_usd === 'number' ? `$${d.cost_usd.toFixed(2)}` : '-'}
                 </span>
               </li>
             ))}

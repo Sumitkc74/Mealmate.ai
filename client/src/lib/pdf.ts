@@ -9,7 +9,7 @@
  */
 import { jsPDF } from 'jspdf';
 import type { MealPlanResponse } from '@/hooks/useAiPlanner';
-import type { GroceryItem } from '@/types';
+import type { GroceryItem, MealPlan, Recipe, Slot } from '@/types';
 
 const PAGE_MARGIN = 14;
 const LINE_HEIGHT = 6;
@@ -150,3 +150,93 @@ export function generateGroceryListPdf(items: GroceryItem[], title = 'Grocery Li
   footer(doc);
   doc.save(`mealmate-grocery-${new Date().toISOString().split('T')[0]}.pdf`);
 }
+
+export function generateSavedPlanPdf(plan: MealPlan, weekLabel?: string): void {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  let y = header(
+    doc,
+    'Weekly Meal Plan — Fridge Schedule',
+    `${weekLabel ?? 'Weekly Plan'} · Prepared with MealMate.ai`
+  );
+
+  const SLOTS: Slot[] = ['breakfast', 'lunch', 'dinner'];
+
+  plan.days.forEach((day) => {
+    if (y > 255) {
+      doc.addPage();
+      y = 20;
+    }
+    // Day banner
+    doc.setFillColor(240, 253, 244);
+    doc.roundedRect(PAGE_MARGIN, y - 4, 182, 7, 1.5, 1.5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(22, 101, 52);
+    doc.text(day.day.toUpperCase(), PAGE_MARGIN + 3, y + 1);
+    doc.setTextColor(0);
+    y += LINE_HEIGHT + 2;
+
+    let hasMeals = false;
+    SLOTS.forEach((slot) => {
+      const meal = day[slot];
+      if (!meal) return;
+      hasMeals = true;
+
+      const slotName = slot.toUpperCase();
+      let title = '';
+      let meta = '';
+
+      if (typeof meal === 'object' && meal !== null) {
+        const recipe = meal as Recipe;
+        title = recipe.title;
+        const parts: string[] = [];
+        if (recipe.prepTime) parts.push(`prep ${recipe.prepTime}m`);
+        if (recipe.cookTime) parts.push(`cook ${recipe.cookTime}m`);
+        if (recipe.nutrition?.calories) parts.push(`${recipe.nutrition.calories} kcal`);
+        if (parts.length > 0) meta = ` (${parts.join(' · ')})`;
+      } else if (typeof meal === 'string') {
+        title = 'Scheduled Recipe';
+      }
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(100);
+      doc.text(slotName.padEnd(10, ' '), PAGE_MARGIN + 4, y);
+      doc.setTextColor(20);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.text(`${title}${meta}`, PAGE_MARGIN + 28, y);
+      y += LINE_HEIGHT;
+    });
+
+    if (!hasMeals) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(9);
+      doc.setTextColor(150);
+      doc.text('No meals scheduled', PAGE_MARGIN + 4, y);
+      doc.setTextColor(0);
+      y += LINE_HEIGHT;
+    }
+
+    y += 2;
+  });
+
+  // Refrigerator memo box
+  if (y < 265) {
+    y += 4;
+    doc.setDrawColor(200, 200, 200);
+    doc.setFillColor(249, 250, 251);
+    doc.roundedRect(PAGE_MARGIN, y, 182, 16, 2, 2, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(75, 85, 99);
+    doc.text('Refrigerator Notes & Prep Tips:', PAGE_MARGIN + 4, y + 6);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text('• Pre-chop fresh vegetables on Sunday to save 20 minutes on busy weeknights.', PAGE_MARGIN + 4, y + 11);
+  }
+
+  footer(doc);
+  doc.save(`mealmate-plan-${weekLabel ? weekLabel.replace(/\s+/g, '-') : 'fridge-schedule'}.pdf`);
+}
+

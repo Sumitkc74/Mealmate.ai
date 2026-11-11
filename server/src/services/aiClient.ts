@@ -1,4 +1,5 @@
 /** Thin axios client for the Python AI microservice. */
+import type { Readable } from 'stream';
 import axios, { type AxiosInstance } from 'axios';
 import { env } from '../config/env';
 import { logger } from '../config/logger';
@@ -48,6 +49,8 @@ export async function getRecommendations(payload: {
   top_k?: number;
   strategy?: RecommendStrategy;
   liked_recipe_ids?: string[];
+  exclude_recipe_ids?: string[];
+  recipes?: unknown[];
 }): Promise<RecommendResponse> {
   try {
     const { data } = await getClient().post<RecommendResponse>('/recommend', payload);
@@ -182,6 +185,25 @@ export async function getAssistantReply(payload: {
     return data;
   } catch (err) {
     logger.error({ err }, 'AI service chat call failed');
+    throw err;
+  }
+}
+
+export async function getAssistantStream(payload: {
+  messages: ChatMessage[];
+  pantry: string[];
+  dietary_preferences: string[];
+  allergies: string[];
+  recipe_context?: string;
+}): Promise<Readable> {
+  try {
+    const { data } = await getClient().post<Readable>('/chat/stream', payload, {
+      responseType: 'stream',
+      timeout: 45_000,
+    });
+    return data;
+  } catch (err) {
+    logger.error({ err }, 'AI service chat/stream call failed');
     throw err;
   }
 }
@@ -496,11 +518,12 @@ export async function ragIndex(recipes: {
   cuisine?: string;
   ingredients: string[];
   tags: string[];
-}[]): Promise<RAGIndexResponse> {
+  instructions?: string[];
+}[], incremental = true): Promise<RAGIndexResponse> {
   try {
     const { data } = await getClient().post<RAGIndexResponse>(
       '/rag/index',
-      { recipes },
+      { recipes, incremental },
       { timeout: 60_000 }
     );
     return data;
@@ -509,3 +532,215 @@ export async function ragIndex(recipes: {
     throw err;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Culinary Knowledge Graph
+// ---------------------------------------------------------------------------
+
+export interface SubstitutionItem {
+  target: string;
+  substitute: string;
+  ratio: string;
+  context: string;
+  notes: string;
+}
+
+export interface SubstitutesResponse {
+  success: boolean;
+  ingredient: string;
+  substitutions: SubstitutionItem[];
+}
+
+export async function getKnowledgeSubstitutes(
+  ingredient: string,
+  context?: string
+): Promise<SubstitutesResponse> {
+  try {
+    const { data } = await getClient().get<SubstitutesResponse>('/knowledge/substitutes', {
+      params: { ingredient, context },
+    });
+    return data;
+  } catch (err) {
+    logger.error({ err, ingredient }, 'AI service knowledge/substitutes call failed');
+    throw err;
+  }
+}
+
+export interface PairingsResponse {
+  success: boolean;
+  ingredient: string;
+  complements: string[];
+}
+
+export async function getKnowledgePairings(ingredient: string): Promise<PairingsResponse> {
+  try {
+    const { data } = await getClient().get<PairingsResponse>('/knowledge/pairings', {
+      params: { ingredient },
+    });
+    return data;
+  } catch (err) {
+    logger.error({ err, ingredient }, 'AI service knowledge/pairings call failed');
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Agentic AI Tool Execution
+// ---------------------------------------------------------------------------
+
+export interface AgentToolTrace {
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  output: unknown;
+  success: boolean;
+  error?: string | null;
+}
+
+export interface AgentChatResponse {
+  success: boolean;
+  reply: string;
+  tool_traces: AgentToolTrace[];
+  actions: Record<string, unknown>[];
+  method: string;
+}
+
+export async function agentChat(payload: {
+  message: string;
+  history?: { role: string; content: string }[];
+  pantry?: string[];
+  allergies?: string[];
+}): Promise<AgentChatResponse> {
+  try {
+    const { data } = await getClient().post<AgentChatResponse>('/agent/chat', payload, {
+      timeout: 30_000,
+    });
+    return data;
+  } catch (err) {
+    logger.error({ err }, 'AI service agent/chat call failed');
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// A/B Experimentation
+// ---------------------------------------------------------------------------
+
+export interface ExperimentVariant {
+  name: string;
+  weight: number;
+  config: Record<string, unknown>;
+}
+
+export interface ExperimentItem {
+  name: string;
+  description: string;
+  active: boolean;
+  variants: ExperimentVariant[];
+}
+
+export interface ExperimentListResponse {
+  success: boolean;
+  experiments: ExperimentItem[];
+}
+
+export async function listExperiments(): Promise<ExperimentListResponse> {
+  try {
+    const { data } = await getClient().get<ExperimentListResponse>('/experiments');
+    return data;
+  } catch (err) {
+    logger.error({ err }, 'AI service experiments list call failed');
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Recipe Verification & Safety Guardrail
+// ---------------------------------------------------------------------------
+
+export interface RecipeVerificationIssue {
+  severity: 'error' | 'warning' | 'info';
+  category: 'safety' | 'edibility' | 'coherence' | 'instructions' | 'completeness' | 'allergen';
+  message: string;
+  field?: string;
+}
+
+export interface VerifyRecipeInput {
+  title: string;
+  description?: string;
+  cuisine?: string;
+  ingredients: Array<{ name: string; quantity?: number; unit?: string }>;
+  instructions: string[];
+  prepTime?: number;
+  cookTime?: number;
+  servings?: number;
+}
+
+export interface VerifyRecipeResponse {
+  success: boolean;
+  is_valid: boolean;
+  score: number;
+  verdict: 'verified' | 'needs_review' | 'rejected';
+  summary: string;
+  issues: RecipeVerificationIssue[];
+  detected_allergens: string[];
+  suggestions: string[];
+}
+
+export async function verifyRecipeWithAiService(
+  payload: VerifyRecipeInput
+): Promise<VerifyRecipeResponse> {
+  try {
+    const { data } = await getClient().post<VerifyRecipeResponse>('/recipes/verify', {
+      title: payload.title,
+      description: payload.description,
+      cuisine: payload.cuisine,
+      ingredients: payload.ingredients,
+      instructions: payload.instructions,
+      prep_time: payload.prepTime,
+      cook_time: payload.cookTime,
+      servings: payload.servings,
+    });
+    return data;
+  } catch (err) {
+    logger.warn({ err }, 'AI service verify call failed, using deterministic fallback');
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Nutrition Estimation
+// ---------------------------------------------------------------------------
+
+export interface EstimateNutritionInput {
+  title?: string;
+  ingredients: Array<{ name: string; quantity?: number; unit?: string }>;
+  servings?: number;
+}
+
+export interface EstimateNutritionResponse {
+  success: boolean;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  fiber?: number;
+  sodium?: number;
+  servings: number;
+}
+
+export async function estimateRecipeNutritionWithAiService(
+  payload: EstimateNutritionInput
+): Promise<EstimateNutritionResponse> {
+  try {
+    const { data } = await getClient().post<EstimateNutritionResponse>(
+      '/recipes/estimate-nutrition',
+      payload
+    );
+    return data;
+  } catch (err) {
+    logger.warn({ err }, 'AI service estimate nutrition call failed');
+    throw err;
+  }
+}
+
+

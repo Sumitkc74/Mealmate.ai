@@ -5,7 +5,6 @@ import { HTML5Backend } from 'react-dnd-html5-backend';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { EmptyState } from '@/components/ui/EmptyState';
 import { RecipeDrawer } from '@/components/planner/RecipeDrawer';
 import { MealSlot } from '@/components/planner/MealSlot';
 import { RecipePickerModal } from '@/components/planner/RecipePickerModal';
@@ -19,11 +18,11 @@ import {
   useGenerateGrocery,
 } from '@/hooks/useMealPlans';
 import {
-  useAiCapabilities,
   useGenerateWeekPlan,
   type MealPlanResponse,
   type PlannerObjective,
 } from '@/hooks/useAiPlanner';
+import { useAiStatus } from '@/hooks/useAiStatus';
 import { useMealPlanRealtime } from '@/hooks/useMealPlanRealtime';
 import {
   DAYS_OF_WEEK,
@@ -33,6 +32,7 @@ import {
   toIsoDate,
 } from '@/lib/week';
 import { extractErrorMessage } from '@/lib/api';
+import { usePageMetadata } from '@/hooks/usePageMetadata';
 import type { DayName, Recipe, Slot, MealPlan } from '@/types';
 
 const SLOTS: Slot[] = ['breakfast', 'lunch', 'dinner'];
@@ -55,6 +55,12 @@ function recipeFromSlot(value: unknown): Recipe | null {
 }
 
 export function PlannerPage() {
+  usePageMetadata({
+    title: 'Weekly Meal Planner | MealMate',
+    description:
+      'Schedule your weekly breakfast, lunch, and dinner plans with automatic pantry ingredient matching and balanced daily macronutrient targets on MealMate.',
+  });
+
   const navigate = useNavigate();
   const [weekStart, setWeekStart] = useState<Date>(() => startOfWeekMondayUTC());
   const [picker, setPicker] = useState<{ day: DayName; slot: Slot } | null>(null);
@@ -73,8 +79,9 @@ export function PlannerPage() {
   const assignSlot = useAssignSlot();
   const genGrocery = useGenerateGrocery();
   const genWeek = useGenerateWeekPlan();
-  const aiCaps = useAiCapabilities();
-  const llmAvailable = aiCaps.data?.llm?.available ?? false;
+  const aiStatus = useAiStatus();
+  const llmAvailable = aiStatus.llmOnline;
+  const serviceOnline = aiStatus.serviceOnline;
   const [aiNote, setAiNote] = useState<string | null>(null);
   const [useLlm, setUseLlm] = useState(false);
   const [objective, setObjective] = useState<PlannerObjective>('balanced');
@@ -211,38 +218,21 @@ export function PlannerPage() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -6, scale: 0.98 }}
               transition={{ duration: 0.22 }}
-              className="rounded-md bg-gradient-to-r from-brand-50 to-brand-100 px-3 py-2 text-sm text-brand-800 shadow-sm"
+              className="rounded border border-line bg-card px-3 py-2 text-xs text-text"
             >
-              <span className="mr-1" aria-hidden>
-                ✨
-              </span>
               {aiNote}
             </motion.div>
           )}
         </AnimatePresence>
 
         <div className="grid gap-4 lg:grid-cols-[1fr,260px]">
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="rounded-lg border border-line bg-card p-4">
             {loadingPlans || loadingPlan ? (
               <div className="grid grid-cols-[80px,repeat(7,1fr)] gap-2">
                 {Array.from({ length: 8 * 4 }).map((_, i) => (
                   <Skeleton key={i} className="h-16 w-full" />
                 ))}
               </div>
-            ) : !planForWeek && !plan ? (
-              <EmptyState
-                icon="🗓️"
-                title="No plan for this week yet"
-                description="Create one to start dragging recipes into slots."
-                action={
-                  <Button
-                    onClick={() => createPlan.mutate({ weekStartDate: weekIso })}
-                    loading={createPlan.isPending}
-                  >
-                    + Create week plan
-                  </Button>
-                }
-              />
             ) : (
               <>
                 <div className="overflow-x-auto">
@@ -302,32 +292,38 @@ export function PlannerPage() {
                   >
                     {OBJECTIVES.map((o) => (
                       <option key={o.value} value={o.value}>
-                        {o.label} — {o.hint}
+                        {o.label}: {o.hint}
                       </option>
                     ))}
                   </select>
-                  {llmAvailable && (
-                    <label className="flex cursor-pointer items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-gray-700 ring-1 ring-gray-200 transition hover:bg-gray-50">
+                  {llmAvailable && serviceOnline && (
+                    <label className="flex cursor-pointer items-center gap-1.5 rounded bg-card px-3 py-1.5 text-xs font-medium text-text border border-line transition hover:bg-canvas">
                       <input
                         type="checkbox"
                         checked={useLlm}
                         onChange={(e) => setUseLlm(e.target.checked)}
                         className="h-3.5 w-3.5 accent-brand-600"
                       />
-                      Use Gemini ({aiCaps.data?.llm?.model ?? 'LLM'})
+                      Use Gemini (LLM)
                     </label>
                   )}
-                  <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
-                    <Button
-                      variant="secondary"
-                      onClick={handleAiGenerate}
-                      loading={genWeek.isPending || assignSlot.isPending}
-                      disabled={!plan && !planForWeek && createPlan.isPending}
-                      title="Auto-fill the week using your pantry, preferences and allergies"
-                    >
-                      ✨ Generate my week
-                    </Button>
-                  </motion.div>
+                  {serviceOnline ? (
+                    <div>
+                      <Button
+                        variant="secondary"
+                        onClick={handleAiGenerate}
+                        loading={genWeek.isPending || assignSlot.isPending}
+                        disabled={createPlan.isPending}
+                        title="Auto-fill the week using your pantry, preferences and allergies"
+                      >
+                        Generate my week
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-amber-700 rounded bg-amber-50 border border-amber-200 px-3 py-1.5">
+                      AI planner offline — click any slot to assign recipes manually.
+                    </p>
+                  )}
                   <ExportPlanPdfButton
                     plan={lastAiResponse}
                     weekLabel={formatWeekRange(weekStart)}
@@ -337,8 +333,9 @@ export function PlannerPage() {
                     onClick={handleGenerateGrocery}
                     loading={genGrocery.isPending}
                     disabled={!plan}
+                    className="bg-ink hover:bg-terracotta text-canvas"
                   >
-                    🛒 Generate grocery list
+                    Generate grocery list
                   </Button>
                 </div>
               </>

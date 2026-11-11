@@ -60,4 +60,28 @@ describe('GroceryList model', () => {
       })
     ).rejects.toThrow();
   });
+
+  it('supports pantry items with expiresAt and category', async () => {
+    const { User } = await import('../models/User');
+    const user = await User.create({
+      name: 'Pantry Chef',
+      email: 'chef@example.com',
+      password: 'password123',
+      pantry: [
+        {
+          ingredient: 'milk',
+          quantity: '1',
+          unit: 'l',
+          addedAt: new Date(),
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          category: 'dairy',
+        },
+      ],
+    });
+
+    expect(user.pantry).toHaveLength(1);
+    expect(user.pantry[0]?.category).toBe('dairy');
+    expect(user.pantry[0]?.expiresAt).toBeInstanceOf(Date);
+  });
 });
+

@@ -20,7 +20,10 @@ function renderPlanner() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={['/planner']}>
+      <MemoryRouter
+        initialEntries={['/planner']}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
         <Routes>
           <Route path="/planner" element={<PlannerPage />} />
           <Route path="/grocery/:id" element={<div>Grocery page</div>} />
@@ -48,16 +51,18 @@ describe('PlannerPage', () => {
     });
   });
 
-  it('shows empty state when there is no plan for the current week', async () => {
+  it('shows empty slots when there is no plan for the current week', async () => {
     get.mockImplementation((url: string) => {
       if (url === '/mealplans') return Promise.resolve({ data: { items: [] } });
       return Promise.resolve({ data: { items: [], total: 0, pages: 1, page: 1, limit: 12 } });
     });
 
     renderPlanner();
-    expect(
-      await screen.findByRole('heading', { name: /no plan for this week yet/i })
-    ).toBeInTheDocument();
+    // Slots are always visible; no plan means all 21 are empty (no recipe titles)
+    const slots = await screen.findAllByTestId(/^slot-/);
+    expect(slots).toHaveLength(21);
+    // No "Create week plan" button should appear
+    expect(screen.queryByRole('heading', { name: /no plan for this week yet/i })).not.toBeInTheDocument();
   });
 
   it('renders 7 days × 3 slot grid when a plan exists', async () => {

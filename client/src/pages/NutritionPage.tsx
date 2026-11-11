@@ -15,8 +15,16 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Link } from 'react-router-dom';
 import { formatWeekRange } from '@/lib/week';
+import { MedicalDisclaimerBanner } from '@/components/ui/MedicalDisclaimerBanner';
+import { usePageMetadata } from '@/hooks/usePageMetadata';
 
 export function NutritionPage() {
+  usePageMetadata({
+    title: 'Nutrition & Macronutrient Analytics | MealMate',
+    description:
+      'Analyze weekly calorie, protein, carbohydrate, and fat breakdowns calculated directly from your scheduled meal plans with MealMate nutrition analytics.',
+  });
+
   const { data: plans, isLoading: loadingPlans } = useMealPlans();
   const [planId, setPlanId] = useState<string>('');
 
@@ -47,7 +55,6 @@ export function NutritionPage() {
   if (!plans || plans.length === 0) {
     return (
       <EmptyState
-        icon="📊"
         title="No meal plans yet"
         description="Create a plan and assign some recipes to see weekly nutrition."
         action={
@@ -82,6 +89,8 @@ export function NutritionPage() {
           ))}
         </select>
       </header>
+
+      <MedicalDisclaimerBanner compact />
 
       {loadingNutrition || !nutrition ? (
         <Skeleton className="h-64 w-full" />

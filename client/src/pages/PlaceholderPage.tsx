@@ -10,8 +10,8 @@ export function PlaceholderPage({ title, description }: PlaceholderPageProps) {
       <p className="mt-2 text-gray-600">
         {description ?? 'This page is coming together in the next phase.'}
       </p>
-      <div className="mt-6 rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">
-        Coming up next 🍳
+      <div className="mt-6 rounded-lg border border-dashed border-line bg-card p-8 text-center text-sm text-ink-soft">
+        Coming soon.
       </div>
     </div>
   );

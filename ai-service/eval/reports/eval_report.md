@@ -6,10 +6,10 @@ For each recipe we sample 30 % of its ingredients as the user query, then check 
 
 | Strategy | Recall@5 | Recall@10 | MRR | NDCG@10 | Median latency (ms) | Queries |
 |---|---:|---:|---:|---:|---:|---:|
-| `tfidf` | 1.000 | 1.000 | 0.915 | 0.937 | 1.54 | 64 |
-| `lsa` | 1.000 | 1.000 | 0.908 | 0.931 | 1.57 | 64 |
-| `collab` | 0.109 | 0.250 | 0.057 | 0.101 | 1.65 | 64 |
-| `hybrid` | 1.000 | 1.000 | 0.915 | 0.937 | 1.73 | 64 |
+| `tfidf` | 1.000 | 1.000 | 0.915 | 0.937 | 3.47 | 64 |
+| `lsa` | 1.000 | 1.000 | 0.908 | 0.931 | 3.71 | 64 |
+| `collab` | 0.109 | 0.250 | 0.057 | 0.101 | 3.81 | 64 |
+| `hybrid` | 1.000 | 1.000 | 0.915 | 0.937 | 3.63 | 64 |
 
 **Best NDCG@10:** `tfidf` with NDCG@10 = 0.937 (100.0 % recall@10).
 

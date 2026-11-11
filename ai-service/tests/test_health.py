@@ -29,5 +29,5 @@ def test_recommend_endpoint_returns_results() -> None:
 
 def test_recommend_validation_error() -> None:
     client = TestClient(app)
-    response = client.post("/recommend", json={"ingredients": []})
+    response = client.post("/recommend", json={"top_k": 0})
     assert response.status_code == 422

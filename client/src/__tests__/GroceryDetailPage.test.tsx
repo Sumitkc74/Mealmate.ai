@@ -19,7 +19,10 @@ function renderAt(id: string) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[`/grocery/${id}`]}>
+      <MemoryRouter
+        initialEntries={[`/grocery/${id}`]}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
         <Routes>
           <Route path="/grocery/:id" element={<GroceryDetailPage />} />
         </Routes>
@@ -82,7 +85,7 @@ describe('GroceryDetailPage', () => {
 
     renderAt('g1');
     const tomato = await screen.findByText('tomato');
-    const checkbox = tomato.parentElement?.querySelector('input[type="checkbox"]');
+    const checkbox = tomato.closest('label')?.querySelector('input[type="checkbox"]');
     expect(checkbox).toBeTruthy();
     await userEvent.setup().click(checkbox!);
 
@@ -92,5 +95,42 @@ describe('GroceryDetailPage', () => {
         expect.objectContaining({ itemId: 'i1', checked: true })
       );
     });
+  });
+
+  it('allows sorting items alphabetically and ungroups categories', async () => {
+    get.mockResolvedValueOnce({ data: { list: sampleList } });
+    const user = userEvent.setup();
+
+    renderAt('g1');
+    expect(await screen.findByText('tomato')).toBeInTheDocument();
+
+    const sortSelect = screen.getByLabelText(/sort items/i);
+    await user.selectOptions(sortSelect, 'name-asc');
+    expect(sortSelect).toHaveValue('name-asc');
+
+    const groupCheckbox = screen.getByLabelText(/group by category/i);
+    await user.click(groupCheckbox);
+
+    expect(screen.getByText(/All Items \(3\)/i)).toBeInTheDocument();
+
+    const labels = screen.getAllByText(/chicken|milk|tomato/i);
+    expect(labels[0]).toHaveTextContent(/chicken/i);
+    expect(labels[1]).toHaveTextContent(/milk/i);
+    expect(labels[2]).toHaveTextContent(/tomato/i);
+  });
+
+  it('filters grocery items by search query', async () => {
+    get.mockResolvedValueOnce({ data: { list: sampleList } });
+    const user = userEvent.setup();
+
+    renderAt('g1');
+    expect(await screen.findByText('tomato')).toBeInTheDocument();
+
+    const searchInput = screen.getByPlaceholderText(/search items/i);
+    await user.type(searchInput, 'tom');
+
+    expect(screen.getByText('tomato')).toBeInTheDocument();
+    expect(screen.queryByText('chicken')).not.toBeInTheDocument();
+    expect(screen.queryByText('milk')).not.toBeInTheDocument();
   });
 });

@@ -7,11 +7,14 @@ deterministic regex/keyword heuristic so the feature always works offline
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
 from . import gemini
 from .schemas import PantryParseRequest, PantryParseResponse, ParsedPantryItem
+
+_logger = logging.getLogger(__name__)
 
 # Common cooking units we'll recognise in the heuristic path.
 _UNITS = {
@@ -101,9 +104,17 @@ def _llm_parse(text: str) -> list[ParsedPantryItem] | None:
         "Lowercase ingredient names. Singular form. Strip adjectives like "
         "'fresh' or 'leftover'. If quantity or unit is unclear, use null."
     )
-    text_resp = gemini.generate_text(
-        system=system, user=text, temperature=0.1, json_mode=True
-    )
+    try:
+        text_resp = gemini.generate_text(
+            system=system,
+            user=text,
+            temperature=0.1,
+            json_mode=True,
+            max_output_tokens=300,
+        )
+    except Exception as exc:
+        _logger.warning("Pantry parse LLM call failed, falling back to heuristic: %s", exc)
+        return None
     if not text_resp:
         return None
     data: Any = gemini.parse_json(text_resp)

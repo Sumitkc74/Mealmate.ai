@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/Button';
 import { extractErrorMessage } from '@/lib/api';
 import type { PantryItem } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
+import { useAiStatus } from '@/hooks/useAiStatus';
+import { useRecipes } from '@/hooks/useRecipes';
 
 interface Props {
   pantry: PantryItem[];
@@ -45,6 +48,22 @@ export function RagRecipeSuggester({ pantry, dietaryPreferences, allergies }: Pr
   const token = useAuthStore((s) => s.token);
   const hasPantry = pantry.length > 0;
 
+  const aiStatus = useAiStatus();
+  const { data: savedRecipesData } = useRecipes({ limit: 200 });
+  const [filterQuery, setFilterQuery] = useState('');
+
+  const filteredRecipes = useMemo(() => {
+    const q = filterQuery.toLowerCase();
+    if (!q) return savedRecipesData?.items ?? [];
+    return (savedRecipesData?.items ?? []).filter(
+      (r) =>
+        r.title.toLowerCase().includes(q) ||
+        (r.cuisine ?? '').toLowerCase().includes(q) ||
+        (r.tags ?? []).some((t: string) => t.toLowerCase().includes(q)) ||
+        (r.ingredients ?? []).some((i: { name: string }) => i.name.toLowerCase().includes(q))
+    );
+  }, [savedRecipesData, filterQuery]);
+
   async function handleSuggest() {
     setError(null);
     setLoading(true);
@@ -68,7 +87,7 @@ export function RagRecipeSuggester({ pantry, dietaryPreferences, allergies }: Pr
       const data: RAGResult = await res.json();
       setResult(data);
     } catch (err) {
-      setError(extractErrorMessage(err, 'Could not fetch suggestions — try again'));
+      setError(extractErrorMessage(err, 'Could not fetch suggestions - try again'));
     } finally {
       setLoading(false);
     }
@@ -80,21 +99,61 @@ export function RagRecipeSuggester({ pantry, dietaryPreferences, allergies }: Pr
     setError(null);
   }
 
+  if (!aiStatus.serviceOnline && !aiStatus.loading) {
+    return (
+      <section className="rounded-lg border border-line bg-card p-5">
+        <div>
+          <h2 className="text-lg font-semibold text-ink">Find a recipe</h2>
+          <p className="mt-1 text-xs text-ink-soft">
+            Search your saved recipes by name, ingredient, cuisine, or tag.
+          </p>
+        </div>
+        <input
+          type="search"
+          className="mt-3 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-200"
+          placeholder="e.g. pasta, chicken, Italian..."
+          value={filterQuery}
+          onChange={(e) => setFilterQuery(e.target.value)}
+        />
+        {filterQuery && (
+          <ul className="mt-3 space-y-2">
+            {filteredRecipes.slice(0, 8).map((r) => (
+              <li key={r.id}>
+                <Link
+                  to={`/recipes/${r.id}`}
+                  className="flex items-center justify-between rounded border border-line bg-canvas-soft px-3 py-2 text-sm hover:border-brand-400 transition"
+                >
+                  <span className="font-medium text-ink">{r.title}</span>
+                  {r.cuisine && (
+                    <span className="text-xs text-ink-soft capitalize">{r.cuisine}</span>
+                  )}
+                </Link>
+              </li>
+            ))}
+            {filteredRecipes.length === 0 && (
+              <p className="text-xs text-ink-soft">No saved recipes match that search.</p>
+            )}
+          </ul>
+        )}
+      </section>
+    );
+  }
+
   return (
-    <section className="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-5 shadow-sm">
+    <section className="rounded-lg border border-line bg-card p-5">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900">
-            <span aria-hidden>🔍 </span>Smart recipe match
+          <h2 className="text-lg font-semibold text-ink">
+            Semantic recipe matching
           </h2>
-          <p className="mt-1 text-xs text-gray-600">
-            Uses your pantry, dietary preferences and allergies to find the best
-            recipe — powered by semantic search and Gemini.
+          <p className="mt-1 text-xs text-ink-soft">
+            Evaluates your pantry items, dietary preferences, and allergies to recommend
+            recipes using vector search and generative ranking.
           </p>
         </div>
         {result && (
-          <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-violet-700 ring-1 ring-violet-200">
+          <span className="shrink-0 rounded bg-canvas-soft border border-line px-2 py-0.5 text-[11px] font-medium text-ink">
             {result.method === 'rag_gemini' ? 'Gemini powered' : 'Semantic search'}
           </span>
         )}
@@ -106,13 +165,13 @@ export function RagRecipeSuggester({ pantry, dietaryPreferences, allergies }: Pr
           {pantry.slice(0, 6).map((p) => (
             <span
               key={p.ingredient}
-              className="rounded-full bg-violet-100 px-2 py-0.5 text-xs text-violet-800 capitalize"
+              className="rounded bg-canvas-soft border border-line px-2 py-0.5 text-xs text-ink capitalize"
             >
               {p.ingredient}
             </span>
           ))}
           {pantry.length > 6 && (
-            <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs text-violet-800">
+            <span className="rounded bg-canvas-soft border border-line px-2 py-0.5 text-xs text-ink-soft">
               +{pantry.length - 6} more
             </span>
           )}
@@ -185,31 +244,42 @@ export function RagRecipeSuggester({ pantry, dietaryPreferences, allergies }: Pr
                       Top matches ({result.recipes.length})
                     </p>
                     <ul className="mt-2 space-y-2">
-                      {result.recipes.map((recipe, i) => (
-                        <motion.li
-                          key={recipe.id ?? i}
-                          initial={{ opacity: 0, x: -8 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: i * 0.05 }}
-                          className="flex items-center justify-between rounded-lg border border-gray-100 bg-white px-4 py-3 shadow-sm"
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate font-medium text-gray-900">
-                              {recipe.title}
-                            </p>
-                            <p className="mt-0.5 truncate text-xs text-gray-500">
-                              {recipe.cuisine && (
-                                <span className="capitalize">{recipe.cuisine} · </span>
-                              )}
-                              {recipe.ingredients?.slice(0, 4).join(', ')}
-                              {recipe.ingredients?.length > 4 ? '…' : ''}
-                            </p>
-                          </div>
-                          <span className="ml-3 shrink-0 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 ring-1 ring-violet-200">
-                            {Math.round((recipe.similarity_score ?? 0) * 100)}% match
-                          </span>
-                        </motion.li>
-                      ))}
+                      {result.recipes.map((recipe, i) => {
+                        const linkTarget =
+                          recipe.id && recipe.id.length === 24
+                            ? `/recipes/${recipe.id}`
+                            : `/recipes?q=${encodeURIComponent(recipe.title)}`;
+                        return (
+                          <motion.li
+                            key={recipe.id ?? i}
+                            initial={{ opacity: 0, x: -8 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: i * 0.05 }}
+                            className="rounded-lg border border-gray-100 bg-white shadow-sm transition hover:border-violet-300 hover:shadow-md"
+                          >
+                            <Link
+                              to={linkTarget}
+                              className="flex items-center justify-between px-4 py-3 group"
+                            >
+                              <div className="min-w-0">
+                                <p className="truncate font-medium text-gray-900 group-hover:text-violet-700 transition-colors">
+                                  {recipe.title}
+                                </p>
+                                <p className="mt-0.5 truncate text-xs text-gray-500">
+                                  {recipe.cuisine && (
+                                    <span className="capitalize">{recipe.cuisine} · </span>
+                                  )}
+                                  {recipe.ingredients?.slice(0, 4).join(', ')}
+                                  {recipe.ingredients?.length > 4 ? '…' : ''}
+                                </p>
+                              </div>
+                              <span className="ml-3 shrink-0 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700 ring-1 ring-violet-200">
+                                {Math.round((recipe.similarity_score ?? 0) * 100)}% match
+                              </span>
+                            </Link>
+                          </motion.li>
+                        );
+                      })}
                     </ul>
                   </div>
                 )}

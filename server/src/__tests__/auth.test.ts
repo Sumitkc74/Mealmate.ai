@@ -71,4 +71,30 @@ describe('Auth routes', () => {
     expect(res.body.user.email).toBe(creds.email);
     expect(res.body.user).not.toHaveProperty('password');
   });
+
+  it('GET /api/auth/me/export exports user data bundle for GDPR portability', async () => {
+    const reg = await request(app).post('/api/auth/register').send(creds);
+    const res = await request(app)
+      .get('/api/auth/me/export')
+      .set('Authorization', `Bearer ${reg.body.token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.user.email).toBe(creds.email);
+    expect(Array.isArray(res.body.mealPlans)).toBe(true);
+    expect(Array.isArray(res.body.groceryLists)).toBe(true);
+    expect(Array.isArray(res.body.authoredRecipes)).toBe(true);
+  });
+
+  it('DELETE /api/auth/me deletes the user account and personal data', async () => {
+    const reg = await request(app).post('/api/auth/register').send(creds);
+    const res = await request(app)
+      .delete('/api/auth/me')
+      .set('Authorization', `Bearer ${reg.body.token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+
+    // Verify user no longer exists
+    const check = await User.findOne({ email: creds.email });
+    expect(check).toBeNull();
+  });
 });

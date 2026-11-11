@@ -33,7 +33,7 @@ def test_chat_uses_gemini_when_available(monkeypatch):
 
     captured: dict[str, object] = {}
 
-    def fake_chat(*, system, history, user_message, temperature=0.6):
+    def fake_chat(*, system, history, user_message, temperature=0.6, **kwargs):
         captured["system"] = system
         captured["history"] = history
         captured["user"] = user_message
@@ -63,7 +63,8 @@ def test_chat_uses_gemini_when_available(monkeypatch):
     assert len(captured["history"]) == 2  # type: ignore[arg-type]
 
 
-def test_pantry_parser_heuristic_basic():
+def test_pantry_parser_heuristic_basic(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     result = pantry_parser.parse(
         PantryParseRequest(
             text="2 tomatoes, half a red onion, 200g chicken breast, leftover rice and a clove of garlic"
@@ -118,7 +119,8 @@ def test_chat_endpoint_returns_200(monkeypatch):
     assert isinstance(body["reply"], str) and body["reply"]
 
 
-def test_pantry_parse_endpoint_returns_items():
+def test_pantry_parse_endpoint_returns_items(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     client = TestClient(app)
     resp = client.post("/pantry/parse", json={"text": "1 cup flour, 2 eggs, milk"})
     assert resp.status_code == 200
@@ -137,3 +139,73 @@ def test_capabilities_endpoint(monkeypatch):
     assert body["success"] is True
     assert body["llm"]["available"] is False
     assert body["features"]["chat"] is True
+
+
+def test_chat_stream_falls_back_without_api_key(monkeypatch):
+    import json
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    client = TestClient(app)
+    resp = client.post(
+        "/chat/stream",
+        json={
+            "messages": [{"role": "user", "content": "What can I cook?"}],
+            "pantry": ["rice"],
+            "dietary_preferences": [],
+            "allergies": [],
+        },
+    )
+    assert resp.status_code == 200
+    assert "text/event-stream" in resp.headers["content-type"]
+    text = resp.text
+    assert "data: " in text
+    lines = [line[6:] for line in text.splitlines() if line.startswith("data: ")]
+    events = [json.loads(l) for l in lines]
+    assert any(e.get("type") == "token" for e in events)
+    done_ev = next(e for e in events if e.get("type") == "done")
+    assert done_ev["strategy"] == "fallback"
+    assert "rice" in done_ev["reply"].lower()
+
+
+def test_chat_stream_uses_gemini_when_available(monkeypatch):
+    import json
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key-123")
+    monkeypatch.setattr(chat_service.gemini, "is_available", lambda: True)
+
+    def fake_stream(*args, **kwargs):
+        yield '{\n  "reply": "Quick '
+        yield 'rice bowl with '
+        yield 'vegetables and soy sauce.",\n  "actions": []\n}'
+
+    monkeypatch.setattr(chat_service.gemini, "generate_chat_stream", fake_stream)
+
+    client = TestClient(app)
+    resp = client.post(
+        "/chat/stream",
+        json={
+            "messages": [{"role": "user", "content": "Quick dinner?"}],
+            "pantry": ["rice"],
+            "dietary_preferences": [],
+            "allergies": [],
+        },
+    )
+    assert resp.status_code == 200
+    text = resp.text
+    lines = [line[6:] for line in text.splitlines() if line.startswith("data: ")]
+    events = [json.loads(l) for l in lines]
+    tokens = [e["chunk"] for e in events if e.get("type") == "token"]
+    assert len(tokens) >= 1
+    done_ev = next(e for e in events if e.get("type") == "done")
+    assert done_ev["strategy"] == "llm"
+    assert "rice bowl" in done_ev["reply"].lower()
+
+
+def test_wikipedia_image_cached_with_httpx(monkeypatch):
+    from app import recipe_gen
+    from app.cache import get_cache
+
+    cache = get_cache("wiki_images")
+    cache.set("biryani", "https://upload.wikimedia.org/test_biryani.jpg")
+
+    url = recipe_gen._fetch_wikipedia_image("biryani")
+    assert url == "https://upload.wikimedia.org/test_biryani.jpg"
+

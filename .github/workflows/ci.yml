@@ -1,4 +1,4 @@
-name: CI
+name: CI & MLOps Pipeline
 
 on:
   push:
@@ -19,14 +19,14 @@ jobs:
         node: ['20']
     defaults:
       run:
-        working-directory: mealmate/server
+        working-directory: server
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-          cache-dependency-path: mealmate/server/package-lock.json
+          cache-dependency-path: server/package-lock.json
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
@@ -41,14 +41,14 @@ jobs:
         node: ['20']
     defaults:
       run:
-        working-directory: mealmate/client
+        working-directory: client
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-          cache-dependency-path: mealmate/client/package-lock.json
+          cache-dependency-path: client/package-lock.json
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
@@ -56,23 +56,35 @@ jobs:
       - run: npm run build
 
   ai-service:
-    name: AI service (Python ${{ matrix.python }})
+    name: AI service & MLOps Eval (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
         python: ['3.12']
     defaults:
       run:
-        working-directory: mealmate/ai-service
+        working-directory: ai-service
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
           cache: pip
-          cache-dependency-path: mealmate/ai-service/requirements*.txt
-      - run: pip install -r requirements.txt -r requirements-dev.txt
-      - run: pytest -q
+          cache-dependency-path: ai-service/requirements*.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run unit & integration test suites
+        run: pytest -v
+      - name: Run RAG Quality & Allergen Safety benchmark
+        run: python eval/eval_rag.py
+      - name: Run Recommender offline evaluation
+        run: python eval/run_eval.py
+      - name: Upload evaluation reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-eval-reports
+          path: ai-service/eval/reports/
 
   docker-build:
     name: Docker images build
@@ -84,18 +96,18 @@ jobs:
       - name: Build server image
         uses: docker/build-push-action@v6
         with:
-          context: mealmate/server
+          context: server
           push: false
           tags: mealmate-server:ci
       - name: Build client image
         uses: docker/build-push-action@v6
         with:
-          context: mealmate/client
+          context: client
           push: false
           tags: mealmate-client:ci
       - name: Build AI service image
         uses: docker/build-push-action@v6
         with:
-          context: mealmate/ai-service
+          context: ai-service
           push: false
           tags: mealmate-ai:ci

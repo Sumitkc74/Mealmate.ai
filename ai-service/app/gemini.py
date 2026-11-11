@@ -17,7 +17,7 @@ import json
 import logging
 import os
 import re
-from typing import Any
+from typing import Any, Iterator
 
 from .cache import get_cache, make_key
 from .metrics import record_llm_call
@@ -67,9 +67,31 @@ def _maybe_quota_error(exc: BaseException, model: str) -> GeminiQuotaError | Non
     return GeminiQuotaError(msg.split("\n", 1)[0], model=model, retry_after=retry_after)
 
 
-def is_available() -> bool:
-    """Cheap check used by routes to advertise feature availability."""
+def is_gemini_available() -> bool:
+    """Return True if Google Gemini API key is configured."""
     return bool(os.environ.get("GEMINI_API_KEY"))
+
+
+def _get_fallback_provider() -> Any | None:
+    """Lazily load secondary fallback LLM provider to avoid circular imports."""
+    try:
+        from .llm_provider import get_fallback_provider
+        return get_fallback_provider()
+    except Exception as exc:
+        _logger.debug("Failed to resolve fallback LLM provider: %s", exc)
+        return None
+
+
+def is_available() -> bool:
+    """Cheap check used by routes to advertise feature availability.
+
+    Returns True if Gemini is available OR if an alternative fallback
+    provider (OpenAI, Groq, Ollama, Azure OpenAI) is configured and ready.
+    """
+    if is_gemini_available():
+        return True
+    fb = _get_fallback_provider()
+    return bool(fb and fb.is_available())
 
 
 def _model_name() -> str:
@@ -82,7 +104,7 @@ def _embed_model_name() -> str:
 
 def _configure() -> Any | None:
     """Return a configured ``google.generativeai`` module or ``None``."""
-    if not is_available():
+    if not is_gemini_available():
         return None
     try:
         import google.generativeai as genai  # type: ignore[import-not-found]
@@ -100,18 +122,36 @@ def generate_text(
     system: str = "You are a helpful assistant.",
     temperature: float = 0.4,
     json_mode: bool = False,
+    max_output_tokens: int | None = None,
 ) -> str | None:
-    """Single-shot generation. Returns the text reply, or ``None`` on failure."""
+    """Single-shot generation with automatic multi-provider failover.
+
+    Returns the text reply, or ``None`` on total failure.
+    """
     cache = get_cache("text")
-    key = make_key("text", _model_name(), system, user, temperature, json_mode)
+    key = make_key("text", _model_name(), system, user, temperature, json_mode, max_output_tokens)
     cached_val = cache.get(key)
     if cached_val is not None:
         return cached_val  # type: ignore[no-any-return]
 
     genai = _configure()
     if genai is None:
+        fallback = _get_fallback_provider()
+        if fallback and fallback.is_available():
+            _logger.info("Gemini not configured; failing over to %s for generate_text", fallback.name)
+            res = fallback.generate_text(
+                user=user,
+                system=system,
+                temperature=temperature,
+                json_mode=json_mode,
+                max_output_tokens=max_output_tokens,
+            )
+            if res:
+                cache.set(key, res)
+                return res
         record_llm_call("text", "no_sdk_or_key")
         return None
+
     try:
         model = genai.GenerativeModel(
             model_name=_model_name(),
@@ -120,9 +160,30 @@ def generate_text(
         config: dict[str, Any] = {"temperature": temperature}
         if json_mode:
             config["response_mime_type"] = "application/json"
+        if max_output_tokens is not None:
+            config["max_output_tokens"] = max_output_tokens
         resp = model.generate_content(user, generation_config=config)
     except Exception as exc:  # pragma: no cover - network path
         quota = _maybe_quota_error(exc, _model_name())
+        _logger.warning("gemini.generate_text failed (%s). Attempting failover to secondary provider...", exc)
+        fallback = _get_fallback_provider()
+        if fallback and fallback.is_available():
+            _logger.info("Failing over generate_text to secondary provider: %s", fallback.name)
+            try:
+                res = fallback.generate_text(
+                    user=user,
+                    system=system,
+                    temperature=temperature,
+                    json_mode=json_mode,
+                    max_output_tokens=max_output_tokens,
+                )
+                if res:
+                    cache.set(key, res)
+                    record_llm_call("text_failover", "ok")
+                    return res
+            except Exception as fb_exc:
+                _logger.warning("Secondary provider %s also failed in generate_text: %s", fallback.name, fb_exc)
+
         if quota is not None:
             _logger.warning(
                 "gemini.generate_text quota exceeded (retry_after=%ss): %s",
@@ -131,6 +192,7 @@ def generate_text(
             )
             record_llm_call("text", "quota_exceeded")
             raise quota from exc
+
         _logger.warning(
             "gemini.generate_text failed: %s: %s",
             type(exc).__name__,
@@ -138,13 +200,34 @@ def generate_text(
         )
         record_llm_call("text", "api_error")
         return None
+
     text = getattr(resp, "text", None)
     if not text:
         try:
             text = resp.candidates[0].content.parts[0].text  # type: ignore[index]
         except Exception:
-            record_llm_call("text", "empty_response")
-            return None
+            text = None
+    if not text:
+        fallback = _get_fallback_provider()
+        if fallback and fallback.is_available():
+            _logger.info("Gemini returned empty text; failing over to %s", fallback.name)
+            try:
+                res = fallback.generate_text(
+                    user=user,
+                    system=system,
+                    temperature=temperature,
+                    json_mode=json_mode,
+                    max_output_tokens=max_output_tokens,
+                )
+                if res:
+                    cache.set(key, res)
+                    record_llm_call("text_failover", "ok")
+                    return res
+            except Exception as fb_exc:
+                _logger.warning("Secondary provider %s failed on empty gemini text: %s", fallback.name, fb_exc)
+        record_llm_call("text", "empty_response")
+        return None
+
     if text:
         cache.set(key, text)
         record_llm_call("text", "ok")
@@ -159,17 +242,12 @@ def generate_chat(
     user_message: str,
     temperature: float = 0.6,
     json_mode: bool = False,
+    max_output_tokens: int | None = None,
 ) -> str | None:
-    """Multi-turn chat. ``history`` items are ``{"role": "user"|"assistant", "content": str}``.
-
-    Cached on the (model, system, history, user_message, temperature, json_mode)
-    tuple, so identical turns from the same conversation return instantly.
-    When ``json_mode`` is true the model is forced to return a JSON object —
-    callers should pair this with :func:`parse_json` to decode it.
-    """
+    """Multi-turn chat with automatic multi-provider failover."""
     cache = get_cache("chat")
     key = make_key(
-        "chat", _model_name(), system, history, user_message, temperature, json_mode
+        "chat", _model_name(), system, history, user_message, temperature, json_mode, max_output_tokens
     )
     cached_val = cache.get(key)
     if cached_val is not None:
@@ -177,8 +255,23 @@ def generate_chat(
 
     genai = _configure()
     if genai is None:
+        fallback = _get_fallback_provider()
+        if fallback and fallback.is_available():
+            _logger.info("Gemini not configured; failing over to %s for generate_chat", fallback.name)
+            res = fallback.generate_chat(
+                system=system,
+                history=history,
+                user_message=user_message,
+                temperature=temperature,
+                json_mode=json_mode,
+                max_output_tokens=max_output_tokens,
+            )
+            if res:
+                cache.set(key, res)
+                return res
         record_llm_call("chat", "no_sdk_or_key")
         return None
+
     try:
         model = genai.GenerativeModel(
             model_name=_model_name(),
@@ -195,12 +288,31 @@ def generate_chat(
         config: dict[str, Any] = {"temperature": temperature}
         if json_mode:
             config["response_mime_type"] = "application/json"
+        if max_output_tokens is not None:
+            config["max_output_tokens"] = max_output_tokens
         resp = chat.send_message(user_message, generation_config=config)
     except Exception as exc:  # pragma: no cover - network path
-        # Surface quota errors distinctly so the UI can show a precise
-        # "daily limit hit, retry in N s" message instead of misleading
-        # "try rephrasing" advice that doesn't apply.
         quota = _maybe_quota_error(exc, _model_name())
+        _logger.warning("gemini.generate_chat failed (%s). Attempting failover to secondary provider...", exc)
+        fallback = _get_fallback_provider()
+        if fallback and fallback.is_available():
+            _logger.info("Failing over generate_chat to secondary provider: %s", fallback.name)
+            try:
+                res = fallback.generate_chat(
+                    system=system,
+                    history=history,
+                    user_message=user_message,
+                    temperature=temperature,
+                    json_mode=json_mode,
+                    max_output_tokens=max_output_tokens,
+                )
+                if res:
+                    cache.set(key, res)
+                    record_llm_call("chat_failover", "ok")
+                    return res
+            except Exception as fb_exc:
+                _logger.warning("Secondary provider %s also failed in generate_chat: %s", fallback.name, fb_exc)
+
         if quota is not None:
             _logger.warning(
                 "gemini.generate_chat quota exceeded (retry_after=%ss): %s",
@@ -209,8 +321,7 @@ def generate_chat(
             )
             record_llm_call("chat", "quota_exceeded")
             raise quota from exc
-        # Log the underlying SDK error so we can actually diagnose chat
-        # failures instead of seeing a silent "api_error" counter bump.
+
         _logger.warning(
             "gemini.generate_chat failed: %s: %s",
             type(exc).__name__,
@@ -218,10 +329,7 @@ def generate_chat(
         )
         record_llm_call("chat", "api_error")
         return None
-    # `resp.text` is a convenience accessor that raises when the response has
-    # no usable text part (e.g. blocked by safety, finish_reason != STOP).
-    # Mirror the candidates-fallback in `generate_text` so chat is just as
-    # robust as one-shot generation.
+
     text: str | None
     try:
         text = getattr(resp, "text", None)
@@ -233,7 +341,25 @@ def generate_chat(
         except Exception:
             text = None
     if not text:
-        # Surface the finish reason so logs make the failure debuggable.
+        fallback = _get_fallback_provider()
+        if fallback and fallback.is_available():
+            _logger.info("Gemini returned empty chat response; failing over to %s", fallback.name)
+            try:
+                res = fallback.generate_chat(
+                    system=system,
+                    history=history,
+                    user_message=user_message,
+                    temperature=temperature,
+                    json_mode=json_mode,
+                    max_output_tokens=max_output_tokens,
+                )
+                if res:
+                    cache.set(key, res)
+                    record_llm_call("chat_failover", "ok")
+                    return res
+            except Exception as fb_exc:
+                _logger.warning("Secondary provider %s failed on empty gemini chat response: %s", fallback.name, fb_exc)
+
         finish = None
         try:
             finish = getattr(resp.candidates[0], "finish_reason", None)
@@ -241,17 +367,91 @@ def generate_chat(
             pass
         record_llm_call("chat", f"empty_response:{finish}" if finish else "empty_response")
         return None
+
     cache.set(key, text)
     record_llm_call("chat", "ok")
     return text
 
 
-def embed_text(text: str) -> list[float] | None:
-    """Return a unit-norm embedding for ``text``, or ``None`` if Gemini is unavailable.
+def generate_chat_stream(
+    *,
+    system: str,
+    history: list[dict[str, str]],
+    user_message: str,
+    temperature: float = 0.6,
+    json_mode: bool = False,
+    max_output_tokens: int | None = 1024,
+) -> Iterator[str]:
+    """Yield incremental text chunks for multi-turn chat."""
+    genai = _configure()
+    if genai is None:
+        fallback = _get_fallback_provider()
+        if fallback and fallback.is_available():
+            _logger.info("Gemini not configured; failing over to %s for generate_chat_stream", fallback.name)
+            res = fallback.generate_chat(
+                system=system,
+                history=history,
+                user_message=user_message,
+                temperature=temperature,
+                json_mode=json_mode,
+                max_output_tokens=max_output_tokens,
+            )
+            if res:
+                yield res
+            return
+        return
 
-    Uses the configured ``GEMINI_EMBED_MODEL`` (default ``text-embedding-004``).
-    Results are cached for the duration of the configured TTL.
-    """
+    try:
+        model = genai.GenerativeModel(
+            model_name=_model_name(),
+            system_instruction=system,
+        )
+        gemini_history = [
+            {
+                "role": "model" if h["role"] == "assistant" else "user",
+                "parts": [h["content"]],
+            }
+            for h in history
+        ]
+        chat = model.start_chat(history=gemini_history)
+        config: dict[str, Any] = {"temperature": temperature}
+        if json_mode:
+            config["response_mime_type"] = "application/json"
+        if max_output_tokens is not None:
+            config["max_output_tokens"] = max_output_tokens
+
+        resp = chat.send_message(user_message, generation_config=config, stream=True)
+        for chunk in resp:
+            text = getattr(chunk, "text", None)
+            if text:
+                yield text
+    except Exception as exc:  # pragma: no cover - network path
+        quota = _maybe_quota_error(exc, _model_name())
+        if quota is not None:
+            raise quota from exc
+
+        _logger.warning("gemini.generate_chat_stream failed: %s. Attempting fallback...", exc)
+        fallback = _get_fallback_provider()
+        if fallback and fallback.is_available():
+            try:
+                res = fallback.generate_chat(
+                    system=system,
+                    history=history,
+                    user_message=user_message,
+                    temperature=temperature,
+                    json_mode=json_mode,
+                    max_output_tokens=max_output_tokens,
+                )
+                if res:
+                    yield res
+                    return
+            except Exception:
+                pass
+        return
+
+
+def embed_text(text: str) -> list[float] | None:
+    """Return an embedding vector for ``text`` with fallback support."""
     if not text or not text.strip():
         return None
     cache = get_cache("embed")
@@ -262,11 +462,24 @@ def embed_text(text: str) -> list[float] | None:
 
     genai = _configure()
     if genai is None:
+        fallback = _get_fallback_provider()
+        if fallback and fallback.is_available():
+            res = fallback.embed_text(text)
+            if res:
+                cache.set(key, res)
+                return res
         record_llm_call("embed", "no_sdk_or_key")
         return None
+
     try:
         resp = genai.embed_content(model=_embed_model_name(), content=text)
     except Exception:  # pragma: no cover - network path
+        fallback = _get_fallback_provider()
+        if fallback and fallback.is_available():
+            res = fallback.embed_text(text)
+            if res:
+                cache.set(key, res)
+                return res
         record_llm_call("embed", "api_error")
         return None
     vec = resp.get("embedding") if isinstance(resp, dict) else getattr(resp, "embedding", None)

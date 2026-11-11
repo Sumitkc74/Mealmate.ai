@@ -9,79 +9,91 @@ interface RecipeCardProps {
 }
 
 const difficultyColors: Record<string, string> = {
-  easy: 'bg-green-100 text-green-800',
-  medium: 'bg-amber-100 text-amber-800',
-  hard: 'bg-red-100 text-red-800',
+  easy: 'bg-canvas text-text border border-line',
+  medium: 'bg-canvas text-text border border-line',
+  hard: 'bg-canvas text-text border border-line',
 };
 
 export function RecipeCard({ recipe, className }: RecipeCardProps) {
   const total = (recipe.prepTime ?? 0) + (recipe.cookTime ?? 0);
-  // Track whether the image successfully loaded so we can fall back to the
-  // emoji placeholder if the URL 404s, gets blocked by a network policy, or
-  // is returned but isn't actually an image (Wikipedia/Pollinations edge cases).
   const [imageOk, setImageOk] = useState(true);
   const showImage = Boolean(recipe.imageUrl) && imageOk;
   const isAiGenerated = recipe.source === 'ai-generated';
+
   return (
     <Link
       to={`/recipes/${recipe.id}`}
       className={cn(
-        'group flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm',
-        'transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-md',
+        'group flex flex-col overflow-hidden rounded-lg border border-line bg-card transition-colors hover:border-terracotta',
         className
       )}
     >
-      <div className="relative aspect-[16/10] w-full overflow-hidden bg-gradient-to-br from-brand-50 to-emerald-100">
+      <div className="relative aspect-[16/10] w-full overflow-hidden bg-canvas">
         {showImage ? (
           <img
             src={recipe.imageUrl}
             alt={recipe.title}
-            className="h-full w-full object-cover transition-transform group-hover:scale-105"
+            width={400}
+            height={250}
             loading="lazy"
+            decoding="async"
+            className="h-full w-full object-cover transition-transform group-hover:scale-102"
             onError={() => setImageOk(false)}
           />
         ) : (
-          <div className="flex h-full items-center justify-center text-5xl">🍽️</div>
+          <div className="flex h-full items-center justify-center font-serif text-xs text-text-muted">
+            Recipe preview
+          </div>
         )}
         {isAiGenerated && (
           <span
-            className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-brand-600 to-emerald-600 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white shadow-sm"
-            title="Drafted by MealMate AI — fully editable"
+            className="absolute left-2.5 top-2.5 inline-flex items-center rounded border border-line bg-card/95 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wide text-text"
+            title="Drafted by MealMate AI: fully editable"
           >
-            ✨ AI-generated
+            AI generated
           </span>
         )}
       </div>
+
       <div className="flex flex-1 flex-col gap-2 p-4">
         <div className="flex items-start justify-between gap-2">
-          <h3 className="line-clamp-2 font-semibold text-gray-900 group-hover:text-brand-700">
+          <h3 className="line-clamp-2 font-serif text-base font-semibold text-text group-hover:text-terracotta transition-colors">
             {recipe.title}
           </h3>
           <span
             className={cn(
-              'shrink-0 rounded-full px-2 py-0.5 text-xs font-medium capitalize',
-              difficultyColors[recipe.difficulty] ?? 'bg-gray-100 text-gray-700'
+              'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-mono capitalize',
+              difficultyColors[recipe.difficulty] ?? 'bg-canvas text-text-muted border border-line'
             )}
           >
             {recipe.difficulty}
           </span>
         </div>
+
         {recipe.description && (
-          <p className="line-clamp-2 text-sm text-gray-600">{recipe.description}</p>
+          <p className="line-clamp-2 text-xs text-text-muted leading-relaxed">{recipe.description}</p>
         )}
-        <div className="mt-auto flex items-center gap-3 pt-2 text-xs text-gray-500">
-          <span>⏱️ {total} min</span>
-          <span>🍽️ {recipe.servings} serv</span>
-          {recipe.cuisine && <span className="capitalize">🌍 {recipe.cuisine}</span>}
+
+        <div className="mt-auto flex items-center gap-2 pt-2 text-xs font-mono text-text-muted">
+          <span>{total} min</span>
+          <span>·</span>
+          <span>{recipe.servings} servings</span>
+          {recipe.cuisine && (
+            <>
+              <span>·</span>
+              <span className="capitalize">{recipe.cuisine}</span>
+            </>
+          )}
         </div>
+
         {recipe.tags && recipe.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-1 pt-1">
             {recipe.tags.slice(0, 3).map((t) => (
               <span
                 key={t}
-                className="rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-700"
+                className="rounded border border-line bg-canvas px-1.5 py-0.5 text-[10px] font-mono text-text-muted"
               >
-                #{t}
+                {t}
               </span>
             ))}
           </div>

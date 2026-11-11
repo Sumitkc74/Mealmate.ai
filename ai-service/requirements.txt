@@ -7,10 +7,7 @@ python-dotenv>=1.0
 
 # ML / data — unpinned to grab latest cp314 wheels
 scikit-learn
-pandas
 numpy
-joblib
-nltk
 
 # HTTP / observability
 httpx>=0.27

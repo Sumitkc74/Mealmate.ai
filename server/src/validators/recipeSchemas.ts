@@ -34,6 +34,12 @@ export const createRecipeSchema = z.object({
   difficulty: z.enum(['easy', 'medium', 'hard']).default('medium'),
 });
 
+export const bulkCreateRecipeSchema = z.object({
+  recipes: z.array(createRecipeSchema).min(1).max(100),
+});
+
+export type BulkCreateRecipeInput = z.infer<typeof bulkCreateRecipeSchema>;
+
 export const updateRecipeSchema = createRecipeSchema.partial();
 
 export const listRecipesQuerySchema = z.object({
@@ -60,9 +66,30 @@ export const generateRecipeSchema = z.object({
   query: z.string().trim().min(2).max(200),
   dietaryPreferences: z.array(z.string().trim().toLowerCase().max(40)).max(20).optional(),
   allergies: z.array(z.string().trim().toLowerCase().max(40)).max(20).optional(),
+  save: z.boolean().optional(),
+});
+
+export const verifyRecipeSchema = z.object({
+  title: z.string().trim().max(200),
+  description: z.string().trim().max(2000).optional(),
+  cuisine: z.string().trim().max(50).optional(),
+  ingredients: z.array(ingredientSchema).default([]),
+  instructions: z.array(z.string().trim()).default([]),
+  prepTime: z.number().int().nonnegative().optional(),
+  cookTime: z.number().int().nonnegative().optional(),
+  servings: z.number().int().positive().optional(),
+});
+
+export const estimateNutritionSchema = z.object({
+  title: z.string().trim().max(200).optional(),
+  ingredients: z.array(ingredientSchema).min(1),
+  servings: z.number().int().positive().max(100).default(2),
 });
 
 export type CreateRecipeInput = z.infer<typeof createRecipeSchema>;
 export type UpdateRecipeInput = z.infer<typeof updateRecipeSchema>;
 export type ListRecipesQuery = z.infer<typeof listRecipesQuerySchema>;
 export type GenerateRecipeInput = z.infer<typeof generateRecipeSchema>;
+export type VerifyRecipeInput = z.infer<typeof verifyRecipeSchema>;
+export type EstimateNutritionSchemaInput = z.infer<typeof estimateNutritionSchema>;
+

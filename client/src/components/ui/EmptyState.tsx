@@ -1,29 +1,31 @@
 import { cn } from '@/lib/cn';
 
 interface EmptyStateProps {
-  icon?: string;
+  icon?: React.ReactNode;
   title: string;
   description?: string;
   action?: React.ReactNode;
   className?: string;
 }
 
-export function EmptyState({ icon = '🍽️', title, description, action, className }: EmptyStateProps) {
+export function EmptyState({ icon, title, description, action, className }: EmptyStateProps) {
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center rounded-2xl border border-dashed border-line-strong bg-card px-6 py-16 text-center',
+        'flex flex-col items-center justify-center rounded-lg border border-dashed border-line bg-card px-6 py-12 text-center',
         className
       )}
     >
-      <div className="text-5xl" aria-hidden>
-        {icon}
-      </div>
-      <h3 className="mt-4 font-serif text-xl font-semibold text-ink">{title}</h3>
-      {description && (
-        <p className="mt-2 max-w-md text-sm leading-relaxed text-ink-soft">{description}</p>
+      {icon && (
+        <div className="mb-2 text-2xl text-text-muted" aria-hidden>
+          {icon}
+        </div>
       )}
-      {action && <div className="mt-5">{action}</div>}
+      <h3 className="font-serif text-lg font-semibold text-text">{title}</h3>
+      {description && (
+        <p className="mt-1.5 max-w-md text-xs leading-relaxed text-text-muted">{description}</p>
+      )}
+      {action && <div className="mt-4">{action}</div>}
     </div>
   );
 }

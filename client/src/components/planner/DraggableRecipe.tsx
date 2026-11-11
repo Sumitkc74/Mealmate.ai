@@ -28,8 +28,8 @@ export function DraggableRecipe({ recipe }: DraggableRecipeProps) {
       )}
     >
       <div className="font-medium text-gray-900 line-clamp-1">{recipe.title}</div>
-      <div className="mt-0.5 text-xs text-gray-500">
-        ⏱ {total} min · 🍽 {recipe.servings}
+      <div className="mt-0.5 text-xs font-mono text-text-muted">
+        {total} min · {recipe.servings} serv
       </div>
     </div>
   );

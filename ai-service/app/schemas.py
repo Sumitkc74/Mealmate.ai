@@ -1,6 +1,6 @@
 """Pydantic schemas for request/response validation."""
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -19,7 +19,7 @@ class HealthResponse(BaseModel):
 
 class RecommendRequest(BaseModel):
     ingredients: list[str] = Field(
-        ..., min_length=1, description="Ingredients available in the user's pantry."
+        default_factory=list, description="Ingredients available in the user's pantry."
     )
     dietary_preferences: list[str] = Field(default_factory=list)
     allergies: list[str] = Field(
@@ -386,17 +386,17 @@ class RAGSuggestRequest(BaseModel):
     pantry: list[str] = Field(
         ...,
         description="Ingredients available (from manual entry or pantry vision scan)",
-        example=["turkey", "rice", "broccoli", "garlic", "olive oil"],
+        json_schema_extra={"example": ["turkey", "rice", "broccoli", "garlic", "olive oil"]},
     )
-    dietary_preferences: list[str] = Field(default=[])
-    allergies: list[str] = Field(default=[])
+    dietary_preferences: list[str] = Field(default_factory=list)
+    allergies: list[str] = Field(default_factory=list)
     top_k: int = Field(default=5, ge=1, le=20)
 
 
 class RAGSuggestResponse(BaseModel):
     success: bool
     suggestion: str
-    recipes: list[dict]
+    recipes: list[dict[str, Any]] = Field(default_factory=list)
     method: str
     rag_available: bool
 
@@ -407,7 +407,7 @@ class RAGQueryRequest(BaseModel):
 class RAGQueryResponse(BaseModel):
     success: bool
     answer: str
-    recipes: list[dict]
+    recipes: list[dict[str, Any]] = Field(default_factory=list)
     method: str
     rag_available: bool
 
@@ -415,13 +415,169 @@ class RAGIndexRecipe(BaseModel):
     id: str
     title: str
     cuisine: str = ""
-    ingredients: list[str] = []
-    tags: list[str] = []
-    instructions: list[str] = []
+    ingredients: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    instructions: list[str] = Field(default_factory=list)
 
 class RAGIndexRequest(BaseModel):
     recipes: list[RAGIndexRecipe]
+    incremental: bool = Field(
+        default=True,
+        description="When True, skip unchanged recipes and only embed new/modified items.",
+    )
 
 class RAGIndexResponse(BaseModel):
     success: bool
     indexed: int
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Graph schemas
+# ---------------------------------------------------------------------------
+
+
+class SubstituteItem(BaseModel):
+    target: str
+    substitute: str
+    ratio: str
+    context: str
+    notes: str
+
+
+class SubstitutesResponse(BaseModel):
+    success: bool = True
+    ingredient: str
+    substitutions: list[SubstituteItem] = Field(default_factory=list)
+
+
+class PairingsResponse(BaseModel):
+    success: bool = True
+    ingredient: str
+    complements: list[str] = Field(default_factory=list)
+
+
+class KnowledgeGraphSummaryResponse(BaseModel):
+    success: bool = True
+    node_count: int
+    edge_count_substitutions: int
+    allergen_classes: int
+    sample_ingredients: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Agentic AI schemas
+# ---------------------------------------------------------------------------
+
+
+class AgentToolTraceOut(BaseModel):
+    tool_name: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    output: Any = None
+    success: bool = True
+    error: str | None = None
+
+
+class AgentChatRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=2000)
+    history: list[dict[str, str]] = Field(default_factory=list)
+    pantry: list[str] = Field(default_factory=list)
+    allergies: list[str] = Field(default_factory=list)
+
+
+class AgentChatResponse(BaseModel):
+    success: bool = True
+    reply: str
+    tool_traces: list[AgentToolTraceOut] = Field(default_factory=list)
+    actions: list[dict[str, Any]] = Field(default_factory=list)
+    method: str = "agentic"
+
+
+# ---------------------------------------------------------------------------
+# A/B Experimentation schemas
+# ---------------------------------------------------------------------------
+
+
+class ExperimentVariantOut(BaseModel):
+    name: str
+    weight: int
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExperimentOut(BaseModel):
+    name: str
+    description: str
+    active: bool
+    variants: list[ExperimentVariantOut] = Field(default_factory=list)
+
+
+class ExperimentListResponse(BaseModel):
+    success: bool = True
+    experiments: list[ExperimentOut] = Field(default_factory=list)
+
+
+class ExperimentConversionRequest(BaseModel):
+    experiment: str
+    variant: str
+    event: str
+
+
+class ExperimentConversionResponse(BaseModel):
+    success: bool = True
+    recorded: bool = True
+
+
+# ---------------------------------------------------------------------------
+# Recipe Verification schemas
+# ---------------------------------------------------------------------------
+
+
+class RecipeVerificationIssue(BaseModel):
+    severity: Literal["error", "warning", "info"]
+    category: Literal["safety", "edibility", "coherence", "instructions", "completeness", "allergen"]
+    message: str
+    field: str | None = None
+
+
+class VerifyRecipeRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    cuisine: str | None = Field(default=None, max_length=50)
+    ingredients: list[dict[str, Any]] = Field(default_factory=list)
+    instructions: list[str] = Field(default_factory=list)
+    prep_time: int | None = None
+    cook_time: int | None = None
+    servings: int | None = None
+
+
+class VerifyRecipeResponse(BaseModel):
+    success: bool = True
+    is_valid: bool
+    score: int
+    verdict: Literal["verified", "needs_review", "rejected"]
+    summary: str
+    issues: list[RecipeVerificationIssue] = Field(default_factory=list)
+    detected_allergens: list[str] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Nutrition Estimation schemas
+# ---------------------------------------------------------------------------
+
+
+class EstimateNutritionRequest(BaseModel):
+    title: str = ""
+    ingredients: list[dict[str, Any]] = Field(default_factory=list)
+    servings: int = Field(default=2, ge=1, le=100)
+
+
+class EstimateNutritionResponse(BaseModel):
+    success: bool = True
+    calories: float
+    protein: float
+    carbs: float
+    fat: float
+    fiber: float | None = None
+    sodium: float | None = None
+    servings: int = 2
+

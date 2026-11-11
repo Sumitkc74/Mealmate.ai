@@ -104,6 +104,98 @@ describe('AI routes', () => {
         .send({ ingredients: ['rice'] });
       expect(res.status).toBe(503);
     });
+
+    it('hydrates recommendation results with Mongo _id and metadata', async () => {
+      const token = await authedToken();
+      const seeded = await Recipe.create({
+        title: 'Tomato Basil Pasta',
+        slug: 'tomato-pasta',
+        ingredients: [{ name: 'tomato' }],
+        instructions: ['cook'],
+        prepTime: 12,
+        cookTime: 18,
+        servings: 4,
+        difficulty: 'easy',
+        tags: ['italian'],
+      });
+
+      mockedRecommend.mockResolvedValueOnce({
+        success: true,
+        count: 1,
+        strategy: 'hybrid',
+        results: [
+          {
+            recipe_id: 'tomato-pasta',
+            title: 'Tomato Basil Pasta',
+            score: 0.95,
+            matched_ingredients: ['tomato'],
+            reason: 'matches',
+          },
+        ],
+      });
+
+      const res = await request(app)
+        .post('/api/ai/recipes/recommend')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ingredients: ['tomato'] });
+
+      expect(res.status).toBe(200);
+      expect(res.body.results[0]._id).toBe(String(seeded._id));
+      expect(res.body.results[0].prepTime).toBe(12);
+      expect(res.body.results[0].cookTime).toBe(18);
+    });
+
+    it('returns starter recommendations when pantry and preferences are completely empty', async () => {
+      const token = await authedToken();
+      await Recipe.create({
+        title: 'Quick Oats',
+        slug: 'quick-oats',
+        ingredients: [{ name: 'oats' }],
+        instructions: ['boil'],
+        prepTime: 5,
+        cookTime: 5,
+        servings: 1,
+        difficulty: 'easy',
+      });
+
+      const res = await request(app)
+        .post('/api/ai/recipes/recommend')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ usePantry: false });
+
+      expect(res.status).toBe(200);
+      expect(res.body.strategy).toBe('starter');
+      expect(res.body.results.length).toBeGreaterThan(0);
+      expect(res.body.results[0].title).toBe('Quick Oats');
+    });
+
+    it('allows recommendations with dietary preferences when pantry is empty', async () => {
+      const token = await authedToken();
+      mockedRecommend.mockResolvedValueOnce({
+        success: true,
+        count: 1,
+        strategy: 'hybrid',
+        results: [
+          {
+            recipe_id: 'vegan-bowl',
+            title: 'Vegan Bowl',
+            score: 0.88,
+            matched_ingredients: [],
+            reason: 'matches vegan',
+          },
+        ],
+      });
+
+      const res = await request(app)
+        .post('/api/ai/recipes/recommend')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ usePantry: false, dietary_preferences: ['vegan'] });
+
+      expect(res.status).toBe(200);
+      expect(mockedRecommend).toHaveBeenCalledWith(
+        expect.objectContaining({ dietary_preferences: ['vegan'] })
+      );
+    });
   });
 
   describe('POST /api/ai/recipes/:slug/similar', () => {

@@ -43,3 +43,5 @@ bootstrap().catch((err) => {
   logger.fatal({ err }, 'Failed to start server');
   process.exit(1);
 });
+// Reloaded with AI service on port 8001
+

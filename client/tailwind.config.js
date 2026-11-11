@@ -10,21 +10,21 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Page surfaces
-        canvas: '#F5EFE6',        // warm cream — main page background
-        'canvas-soft': '#FAF6EF', // slightly lighter cream
-        card: '#FFFDF9',          // off-white card surface
+        // Page surfaces: warm non-white neutral tone
+        canvas: '#FAF7F2',
+        'canvas-soft': '#F4EFE6',
+        card: '#FFFDF9',
 
-        // Ink (text)
-        ink: '#2A2723',           // deep warm near-black
-        'ink-soft': '#5B544A',    // secondary body
-        'ink-mute': '#8B8479',    // captions / hints
+        // Ink (text): deep warm charcoal/umber
+        ink: '#24211D',
+        'ink-soft': '#544E45',
+        'ink-mute': '#7D7569',
 
-        // Hairlines / dividers
-        line: '#E6DDCC',
-        'line-strong': '#CDC2AC',
+        // Hairlines / crisp dividers
+        line: '#E5DFD3',
+        'line-strong': '#CCC4B4',
 
-        // Terracotta accent (Claude-orange family, tuned for food)
+        // Terracotta accent: single intentional accent color
         brand: {
           50: '#FBF1EC',
           100: '#F4DDD0',
@@ -38,7 +38,7 @@ export default {
           900: '#4F261A',
         },
 
-        // Auxiliary green for sustainability / nutrition chips
+        // Auxiliary sage for pantry freshness indicators
         sage: {
           50: '#EFF3EC',
           100: '#D8E2D2',
@@ -49,16 +49,18 @@ export default {
       },
       fontFamily: {
         serif: ['"Fraunces"', '"Source Serif 4"', 'Georgia', 'serif'],
-        sans: ['"Inter"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        sans: ['"Plus Jakarta Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
       },
       boxShadow: {
-        soft: '0 1px 2px rgba(42, 39, 35, 0.04), 0 8px 24px rgba(42, 39, 35, 0.06)',
-        ring: '0 0 0 1px rgba(42, 39, 35, 0.06)',
+        soft: '0 1px 2px rgba(36, 33, 29, 0.04)',
+        ring: '0 0 0 1px rgba(36, 33, 29, 0.06)',
       },
       borderRadius: {
-        xl: '0.875rem',
-        '2xl': '1.125rem',
+        sm: '0.25rem',
+        md: '0.375rem',
+        lg: '0.5rem',
+        xl: '0.75rem',
       },
     },
   },

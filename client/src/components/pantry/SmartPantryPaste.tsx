@@ -6,7 +6,7 @@ import { extractErrorMessage } from '@/lib/api';
 import type { PantryItem } from '@/types';
 
 interface Props {
-  /** Existing pantry — we de-dupe by ingredient name. */
+  /** Existing pantry - we de-dupe by ingredient name. */
   existing: PantryItem[];
   /** Called once with the merged pantry. */
   onAdd: (next: PantryItem[]) => Promise<void> | void;
@@ -33,7 +33,7 @@ export function SmartPantryPaste({ existing, onAdd }: Props) {
       setPreview(res.items);
       setStrategy(res.strategy);
     } catch (err) {
-      setError(extractErrorMessage(err, 'Could not parse that — try simplifying it'));
+      setError(extractErrorMessage(err, 'Could not parse that - try simplifying it'));
     }
   }
 
@@ -65,15 +65,15 @@ export function SmartPantryPaste({ existing, onAdd }: Props) {
   }
 
   return (
-    <section className="rounded-xl border border-brand-200 bg-gradient-to-br from-brand-50 to-white p-5 shadow-sm">
+    <section className="rounded-lg border border-line bg-card p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900">
-            <span aria-hidden>✨ </span>Smart paste
+          <h2 className="text-lg font-semibold text-ink">
+            Batch pantry paste
           </h2>
-          <p className="mt-1 text-xs text-gray-600">
-            Paste a shopping receipt or just type what you have. The AI extracts
-            structured ingredients, quantities and units before adding them.
+          <p className="mt-1 text-xs text-ink-soft">
+            Paste a shopping receipt or list of ingredients. Automated parsing extracts
+            structured names, quantities, and units before adding them.
           </p>
         </div>
       </div>

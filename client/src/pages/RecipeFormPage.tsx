@@ -6,10 +6,23 @@ import {
   useCreateRecipe,
   useRecipe,
   useUpdateRecipe,
+  useVerifyRecipe,
+  useEstimateNutrition,
   type RecipeInput,
+  type VerifyRecipeResponse,
 } from '@/hooks/useRecipes';
+import { RecipeImportModal } from '@/components/recipes/RecipeImportModal';
+import { RecipeVerificationModal } from '@/components/recipes/RecipeVerificationModal';
 import { extractErrorMessage } from '@/lib/api';
+import { usePageMetadata } from '@/hooks/usePageMetadata';
 import type { Difficulty } from '@/types';
+
+const ShieldCheckIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4' }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+  </svg>
+);
+
 
 interface IngredientRow {
   name: string;
@@ -66,6 +79,12 @@ interface RecipeFormPageProps {
 }
 
 export function RecipeFormPage({ mode }: RecipeFormPageProps) {
+  usePageMetadata({
+    title: mode === 'edit' ? 'Edit Recipe | MealMate' : 'New Recipe | MealMate',
+    description:
+      'Create or edit your recipe details, ingredient quantities, preparation times, and step-by-step kitchen instructions with automated nutrition analysis.',
+  });
+
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const isEdit = mode === 'edit';
@@ -73,9 +92,15 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
   const { data: existing, isLoading: loadingExisting } = useRecipe(isEdit ? id : undefined);
   const create = useCreateRecipe();
   const update = useUpdateRecipe(id ?? '');
+  const verify = useVerifyRecipe();
+  const estimateNutrition = useEstimateNutrition();
 
   const [form, setForm] = useState<FormState>(initialState);
   const [error, setError] = useState<string | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
+  const [verificationResult, setVerificationResult] = useState<VerifyRecipeResponse | null>(null);
+  const [pendingPayload, setPendingPayload] = useState<RecipeInput | null>(null);
 
   useEffect(() => {
     if (isEdit && existing) {
@@ -139,10 +164,7 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
     }));
   }
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-
+  function buildPayload(): RecipeInput | null {
     const ingredients = form.ingredients
       .filter((i) => i.name.trim().length > 0)
       .map((i) => ({
@@ -153,16 +175,16 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
     const instructions = form.instructions.map((s) => s.trim()).filter(Boolean);
 
     if (!form.title.trim() || form.title.trim().length < 2) {
-      setError('Title must be at least 2 characters');
-      return;
+      setError('Please provide a recipe title (at least 2 characters long).');
+      return null;
     }
     if (ingredients.length === 0) {
-      setError('Add at least one ingredient');
-      return;
+      setError('Please add at least one ingredient with a valid name.');
+      return null;
     }
     if (instructions.length === 0) {
-      setError('Add at least one instruction step');
-      return;
+      setError('Please add at least one step in the cooking instructions.');
+      return null;
     }
 
     const nutrition = {
@@ -173,7 +195,7 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
     };
     const hasNutrition = Object.values(nutrition).some((v) => v !== undefined);
 
-    const payload: RecipeInput = {
+    return {
       title: form.title.trim(),
       description: form.description.trim() || undefined,
       cuisine: form.cuisine.trim() || undefined,
@@ -190,7 +212,9 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
       instructions,
       nutrition: hasNutrition ? nutrition : undefined,
     };
+  }
 
+  async function executeSave(payload: RecipeInput) {
     try {
       if (isEdit) {
         const recipe = await update.mutateAsync(payload);
@@ -204,6 +228,85 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
     }
   }
 
+  async function runVerification(payload: RecipeInput): Promise<VerifyRecipeResponse | null> {
+    try {
+      setIsVerificationModalOpen(true);
+      const res = await verify.mutateAsync({
+        title: payload.title,
+        description: payload.description,
+        cuisine: payload.cuisine,
+        ingredients: payload.ingredients.map((i) => ({
+          name: i.name,
+          quantity: i.quantity,
+          unit: i.unit,
+        })),
+        instructions: payload.instructions,
+        prepTime: payload.prepTime,
+        cookTime: payload.cookTime,
+        servings: payload.servings,
+      });
+      setVerificationResult(res);
+      return res;
+    } catch (err) {
+      setError(extractErrorMessage(err, 'Verification service encountered an error.'));
+      setIsVerificationModalOpen(false);
+      return null;
+    }
+  }
+
+  async function handleVerifyClick() {
+    setError(null);
+    const payload = buildPayload();
+    if (!payload) return;
+    setPendingPayload(payload);
+    await runVerification(payload);
+  }
+
+  async function handleEstimateNutrition() {
+    setError(null);
+    const validIngredients = form.ingredients
+      .filter((i) => i.name.trim().length > 0)
+      .map((i) => ({
+        name: i.name.trim(),
+        quantity: toNum(i.quantity),
+        unit: i.unit.trim() || undefined,
+      }));
+
+    if (validIngredients.length === 0) {
+      setError('Please add at least one ingredient with a quantity to calculate macros.');
+      return;
+    }
+
+    try {
+      const result = await estimateNutrition.mutateAsync({
+        title: form.title.trim(),
+        ingredients: validIngredients,
+        servings: toNum(form.servings) || 2,
+      });
+
+      if (result.success) {
+        update_('calories', String(Math.round(result.calories)));
+        update_('protein', String(Math.round(result.protein)));
+        update_('carbs', String(Math.round(result.carbs)));
+        update_('fat', String(Math.round(result.fat)));
+      }
+    } catch (err) {
+      setError(extractErrorMessage(err, 'Failed to calculate nutrition estimates.'));
+    }
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    const payload = buildPayload();
+    if (!payload) return;
+
+    setPendingPayload(payload);
+    // Verify recipe before saving to check safety, edibility, and quality
+    await runVerification(payload);
+  }
+
   if (isEdit && loadingExisting) {
     return <p className="text-gray-600">Loading recipe…</p>;
   }
@@ -211,7 +314,8 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
   const submitting = create.isPending || update.isPending;
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6" noValidate>
+    <>
+      <form onSubmit={handleSubmit} className="space-y-6" noValidate>
       <div>
         <Link to={isEdit && id ? `/recipes/${id}` : '/recipes'} className="text-sm text-brand-700 hover:underline">
           ← Cancel
@@ -220,6 +324,28 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
           {isEdit ? 'Edit recipe' : 'New recipe'}
         </h1>
       </div>
+
+      {!isEdit && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-line bg-card p-4 text-sm text-ink shadow-xs">
+          <div className="flex items-center gap-3">
+            <div>
+              <p className="font-semibold text-ink">Have multiple recipes to add?</p>
+              <p className="text-ink-soft text-xs sm:text-sm">
+                Import in bulk directly from a CSV or Excel (.xlsx) spreadsheet.
+              </p>
+            </div>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="shrink-0 bg-white hover:bg-brand-50 self-start sm:self-auto"
+            onClick={() => setIsImportModalOpen(true)}
+          >
+            Import spreadsheet
+          </Button>
+        </div>
+      )}
 
       <section className="grid gap-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm sm:grid-cols-2">
         <Input
@@ -325,17 +451,18 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
                 size="sm"
                 onClick={() => removeIngredient(idx)}
                 aria-label={`Remove ingredient ${idx + 1}`}
+                className="text-xs text-ink-soft hover:text-red-700"
               >
-                ✕
+                Remove
               </Button>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <section className="rounded-lg border border-line bg-card p-6">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Instructions</h2>
+          <h2 className="text-lg font-semibold text-ink">Instructions</h2>
           <Button type="button" variant="secondary" size="sm" onClick={addInstruction}>
             + Add step
           </Button>
@@ -352,7 +479,7 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
                 onChange={(e) => setInstruction(idx, e.target.value)}
                 aria-label={`Step ${idx + 1}`}
                 placeholder={`Step ${idx + 1}`}
-                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                className="w-full rounded border border-line bg-card px-3 py-2 text-sm text-ink focus:border-brand-500 focus:outline-none"
               />
               <Button
                 type="button"
@@ -360,8 +487,9 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
                 size="sm"
                 onClick={() => removeInstruction(idx)}
                 aria-label={`Remove step ${idx + 1}`}
+                className="text-xs text-ink-soft hover:text-red-700"
               >
-                ✕
+                Remove
               </Button>
             </div>
           ))}
@@ -369,9 +497,21 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
       </section>
 
       <section className="grid gap-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm sm:grid-cols-4">
-        <h2 className="text-lg font-semibold text-gray-900 sm:col-span-4">
-          Nutrition <span className="text-sm font-normal text-gray-500">(per serving — optional)</span>
-        </h2>
+        <div className="flex flex-wrap items-center justify-between sm:col-span-4 gap-2">
+          <h2 className="text-lg font-semibold text-gray-900">
+            Nutrition <span className="text-sm font-normal text-gray-500">(per serving, optional)</span>
+          </h2>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={handleEstimateNutrition}
+            loading={estimateNutrition.isPending}
+            className="text-xs flex items-center gap-1.5 border-emerald-200 text-emerald-800 hover:bg-emerald-50"
+          >
+            Calculate Macros
+          </Button>
+        </div>
         <Input
           type="number"
           min={0}
@@ -408,16 +548,54 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
         </div>
       )}
 
-      <div className="flex justify-end gap-2">
-        <Link to={isEdit && id ? `/recipes/${id}` : '/recipes'}>
-          <Button type="button" variant="secondary">
-            Cancel
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+        <div className="flex items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400">
+          <ShieldCheckIcon className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+          <span>Food safety and recipe verification active before publishing</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Link to={isEdit && id ? `/recipes/${id}` : '/recipes'}>
+            <Button type="button" variant="secondary">
+              Cancel
+            </Button>
+          </Link>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleVerifyClick}
+            loading={verify.isPending}
+            className="border-emerald-200 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 flex items-center gap-1.5"
+          >
+            <ShieldCheckIcon className="w-4 h-4 text-emerald-600" />
+            Verify Recipe
           </Button>
-        </Link>
-        <Button type="submit" loading={submitting}>
-          {isEdit ? 'Save changes' : 'Create recipe'}
-        </Button>
+          <Button type="submit" loading={submitting || verify.isPending}>
+            {isEdit ? 'Save changes' : 'Create recipe'}
+          </Button>
+        </div>
       </div>
     </form>
+
+    <RecipeVerificationModal
+      isOpen={isVerificationModalOpen}
+      onClose={() => setIsVerificationModalOpen(false)}
+      onConfirmPublish={() => {
+        setIsVerificationModalOpen(false);
+        if (pendingPayload) {
+          void executeSave(pendingPayload);
+        }
+      }}
+      isLoading={verify.isPending}
+      verification={verificationResult}
+      recipeTitle={form.title}
+    />
+
+    <RecipeImportModal
+      open={isImportModalOpen}
+      onClose={() => setIsImportModalOpen(false)}
+      onSuccess={() => navigate('/recipes')}
+    />
+  </>
   );
 }

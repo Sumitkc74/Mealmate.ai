@@ -2,12 +2,22 @@
 
 export type Role = 'user' | 'admin';
 
+export interface CookingHistoryEntry {
+  recipeId: string;
+  recipeTitle: string;
+  cookedAt: string;
+  servingsCooked?: number;
+  rating?: number;
+  notes?: string;
+}
+
 export interface User {
   id: string;
   name: string;
   email: string;
   role: Role;
   pantry: PantryItem[];
+  cookingHistory?: CookingHistoryEntry[];
   dietaryPreferences: string[];
   allergies: string[];
   createdAt?: string;
@@ -18,6 +28,9 @@ export interface PantryItem {
   ingredient: string;
   quantity?: string;
   unit?: string;
+  category?: string;
+  addedAt?: string;
+  expiresAt?: string;
 }
 
 export interface AuthResponse {

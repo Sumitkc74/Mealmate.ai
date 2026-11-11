@@ -28,7 +28,7 @@ export function RecipePickerModal({ open, title, onClose, onPick }: RecipePicker
       setGenError(null);
       generate.reset();
     }
-    // We intentionally don't include `generate` in the dep array — calling
+    // We intentionally don't include `generate` in the dep array - calling
     // .reset() on every render would loop. Only run when `open` changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -79,17 +79,17 @@ export function RecipePickerModal({ open, title, onClose, onPick }: RecipePicker
       onClick={onClose}
     >
       <div
-        className="flex max-h-[80vh] w-full max-w-md flex-col rounded-xl bg-white p-5 shadow-xl"
+        className="flex max-h-[80vh] w-full max-w-md flex-col rounded-lg bg-card border border-line p-5 shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+          <h3 className="text-base font-semibold text-ink">{title}</h3>
           <button
             onClick={onClose}
             aria-label="Close"
-            className="rounded p-1 text-gray-500 hover:bg-gray-100"
+            className="rounded p-1 text-ink-soft hover:bg-canvas-soft hover:text-ink text-xs font-semibold"
           >
-            ✕
+            Close
           </button>
         </div>
 
@@ -104,15 +104,15 @@ export function RecipePickerModal({ open, title, onClose, onPick }: RecipePicker
         </div>
 
         <ul className="mt-3 flex-1 space-y-1 overflow-y-auto">
-          {isLoading && <li className="p-3 text-sm text-gray-500">Loading…</li>}
+          {isLoading && <li className="p-3 text-sm text-ink-soft">Loading…</li>}
           {data?.items.map((r) => (
             <li key={r.id}>
               <button
                 onClick={() => onPick(r.id)}
-                className="flex w-full items-center justify-between rounded-md p-2 text-left text-sm hover:bg-brand-50"
+                className="flex w-full items-center justify-between rounded p-2 text-left text-sm hover:bg-canvas-soft"
               >
-                <span className="truncate font-medium text-gray-900">{r.title}</span>
-                <span className="ml-2 shrink-0 text-xs text-gray-500">
+                <span className="truncate font-medium text-ink">{r.title}</span>
+                <span className="ml-2 shrink-0 text-xs text-ink-soft">
                   {(r.prepTime ?? 0) + (r.cookTime ?? 0)} min
                 </span>
               </button>
@@ -120,32 +120,31 @@ export function RecipePickerModal({ open, title, onClose, onPick }: RecipePicker
           ))}
           {noResults && (
             <li className="space-y-3 p-3 text-sm">
-              <p className="text-gray-600">
+              <p className="text-ink-soft">
                 No recipes in your library match{' '}
-                <span className="font-medium text-gray-900">
+                <span className="font-medium text-ink">
                   &ldquo;{trimmedSearch || search}&rdquo;
                 </span>
                 .
               </p>
-              <p className="text-xs text-gray-500">
-                MealMate AI can draft one for you using your exact query and add it
-                straight to this slot — including ingredients, instructions, and
-                an image if available.
+              <p className="text-xs text-ink-soft">
+                MealMate can generate a recipe draft for your search terms and assign
+                it to this slot.
               </p>
             </li>
           )}
           <li className="space-y-3 p-3 text-sm">
             {canGenerate ? (
               <>
-                <p className="text-gray-600">
-                  Can’t find the perfect match? Generate a new recipe based on{' '}
-                  <span className="font-medium text-gray-900">{trimmedSearch || search}</span>.
+                <p className="text-ink-soft">
+                  Can’t find the match? Generate a custom recipe based on{' '}
+                  <span className="font-medium text-ink">{trimmedSearch || search}</span>.
                 </p>
                 <button
                   type="button"
                   onClick={handleGenerate}
                   disabled={generate.isPending}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-brand-600 to-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:from-brand-700 hover:to-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex w-full items-center justify-center gap-2 rounded bg-brand-600 px-4 py-2 text-sm font-semibold text-white border border-brand-700 shadow-sm transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {generate.isPending ? (
                     <>
@@ -153,10 +152,7 @@ export function RecipePickerModal({ open, title, onClose, onPick }: RecipePicker
                       Generating…
                     </>
                   ) : (
-                    <>
-                      <span aria-hidden>✨</span>
-                      Generate &ldquo;{trimmedSearch || search}&rdquo; with AI
-                    </>
+                    <>Generate &ldquo;{trimmedSearch || search}&rdquo;</>
                   )}
                 </button>
                 {genError && (

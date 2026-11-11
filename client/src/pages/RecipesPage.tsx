@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { RecipeCardSkeleton } from '@/components/ui/Skeleton';
 import { RecipeCard } from '@/components/recipes/RecipeCard';
 import { SuggestedRecipes } from '@/components/recipes/SuggestedRecipes';
+import { RecipeImportModal } from '@/components/recipes/RecipeImportModal';
+import { AddRecipeModal } from '@/components/recipes/AddRecipeModal';
 import { useRecipes, type ListRecipesParams } from '@/hooks/useRecipes';
 import { useDebounce } from '@/hooks/useDebounce';
 import { extractErrorMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
+import { usePageMetadata } from '@/hooks/usePageMetadata';
 
 const DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
 const SORTS = [
@@ -19,6 +22,12 @@ const SORTS = [
 ] as const;
 
 export function RecipesPage() {
+  usePageMetadata({
+    title: 'Recipe Library | MealMate',
+    description:
+      'Browse and search your personal recipe collection, filter by dietary requirements and prep time, or generate custom dishes with MealMate smart solver.',
+  });
+
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [search, setSearch] = useState(searchParams.get('q') ?? '');
@@ -71,6 +80,9 @@ export function RecipesPage() {
 
   const hasFilters = Boolean(cuisine || tag || difficulty || maxPrepTimeRaw || debouncedSearch);
 
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -80,12 +92,28 @@ export function RecipesPage() {
             {data ? `${data.total} recipe${data.total === 1 ? '' : 's'}` : 'Loading…'}
           </p>
         </div>
-        <Link to="/recipes/new">
-          <Button>+ New recipe</Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setIsImportModalOpen(true)}
+            className="flex items-center gap-1.5"
+          >
+            <span>Import CSV / Excel</span>
+          </Button>
+          <Button
+            type="button"
+            onClick={() => setIsAddModalOpen(true)}
+            className="flex items-center gap-1.5"
+          >
+            <span>+ New recipe</span>
+          </Button>
+        </div>
       </header>
 
-      <SuggestedRecipes />
+      <SuggestedRecipes
+        onGenerateNew={() => setIsAddModalOpen(true)}
+      />
 
       <div className="grid gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-5">
         <Input
@@ -203,7 +231,6 @@ export function RecipesPage() {
         </>
       ) : (
         <EmptyState
-          icon="🍳"
           title="No recipes yet"
           description={
             hasFilters
@@ -216,13 +243,27 @@ export function RecipesPage() {
                 Clear filters
               </Button>
             ) : (
-              <Link to="/recipes/new">
-                <Button>+ New recipe</Button>
-              </Link>
+              <Button
+                type="button"
+                onClick={() => setIsAddModalOpen(true)}
+              >
+                + New recipe
+              </Button>
             )
           }
         />
       )}
+
+      <AddRecipeModal
+        open={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        onOpenImport={() => setIsImportModalOpen(true)}
+      />
+
+      <RecipeImportModal
+        open={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+      />
     </div>
   );
 }

@@ -6,6 +6,17 @@ export interface IPantryItem {
   quantity?: string;
   unit?: string;
   addedAt: Date;
+  expiresAt?: Date;
+  category?: string;
+}
+
+export interface ICookingHistoryEntry {
+  recipeId: string;
+  recipeTitle: string;
+  cookedAt: Date;
+  servingsCooked?: number;
+  rating?: number;
+  notes?: string;
 }
 
 export interface IUser {
@@ -14,8 +25,12 @@ export interface IUser {
   password: string;
   role: 'user' | 'admin';
   pantry: IPantryItem[];
+  cookingHistory: ICookingHistoryEntry[];
   dietaryPreferences: string[];
   allergies: string[];
+  termsAcceptedAt?: Date;
+  dietaryConsentAt?: Date;
+  marketingOptIn?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -34,6 +49,20 @@ const PantryItemSchema = new Schema<IPantryItem>(
     quantity: { type: String, trim: true, maxlength: 20 },
     unit: { type: String, trim: true, lowercase: true, maxlength: 20 },
     addedAt: { type: Date, default: Date.now },
+    expiresAt: { type: Date },
+    category: { type: String, trim: true },
+  },
+  { _id: false }
+);
+
+const CookingHistorySchema = new Schema<ICookingHistoryEntry>(
+  {
+    recipeId: { type: String, required: true, trim: true },
+    recipeTitle: { type: String, required: true, trim: true },
+    cookedAt: { type: Date, default: Date.now },
+    servingsCooked: { type: Number, min: 1 },
+    rating: { type: Number, min: 1, max: 5 },
+    notes: { type: String, trim: true, maxlength: 500 },
   },
   { _id: false }
 );
@@ -59,6 +88,7 @@ const UserSchema = new Schema<IUser, UserModel, IUserMethods>(
     },
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
     pantry: { type: [PantryItemSchema], default: [] },
+    cookingHistory: { type: [CookingHistorySchema], default: [] },
     dietaryPreferences: {
       type: [String],
       default: [],
@@ -68,6 +98,9 @@ const UserSchema = new Schema<IUser, UserModel, IUserMethods>(
       },
     },
     allergies: { type: [String], default: [] },
+    termsAcceptedAt: { type: Date, default: Date.now },
+    dietaryConsentAt: { type: Date },
+    marketingOptIn: { type: Boolean, default: false },
   },
   {
     timestamps: true,

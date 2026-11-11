@@ -33,11 +33,14 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
     statusCode = 400;
     message = `Invalid ${err.path}: ${String(err.value)}`;
   } else if (err instanceof Error) {
-    message = err.message;
+    message = env.NODE_ENV === 'production' ? 'Internal server error' : err.message;
   }
 
   if (statusCode >= 500) {
     logger.error({ err, path: req.originalUrl, method: req.method }, 'Unhandled error');
+    if (env.NODE_ENV === 'production') {
+      message = 'Internal server error';
+    }
   } else {
     logger.warn({ err: (err as Error)?.message, path: req.originalUrl }, 'Request error');
   }

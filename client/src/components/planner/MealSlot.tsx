@@ -69,9 +69,9 @@ export function MealSlot({
           <button
             onClick={onClear}
             aria-label={`Clear ${slot} on ${day}`}
-            className="rounded p-0.5 text-gray-400 hover:bg-white hover:text-red-600"
+            className="rounded px-1 text-text-muted hover:bg-card hover:text-terracotta font-mono text-xs"
           >
-            ✕
+            ×
           </button>
         )}
       </div>
@@ -80,17 +80,17 @@ export function MealSlot({
         <Link
           to={`/recipes/${recipe.id}`}
           // Clicking the filled tile opens the recipe detail page. The clear
-          // ✕ button sits above this in the header and stops propagation via
+          // button sits above this in the header and stops propagation via
           // its own click handler, so the link is never accidentally
           // triggered when the user removes the assignment.
-          className="flex flex-1 flex-col rounded-sm outline-none transition hover:bg-white/60 focus-visible:ring-2 focus-visible:ring-brand-400"
+          className="flex flex-1 flex-col rounded-sm outline-none transition hover:bg-canvas focus-visible:ring-2 focus-visible:ring-brand-400"
           aria-label={`Open recipe ${recipe.title}`}
         >
-          <p className="line-clamp-2 text-sm font-medium text-gray-900 hover:text-brand-700">
+          <p className="line-clamp-2 text-sm font-medium text-ink hover:text-brand-700">
             {recipe.title}
           </p>
-          <p className="mt-auto text-[10px] text-gray-500">
-            ⏱ {(recipe.prepTime ?? 0) + (recipe.cookTime ?? 0)} min
+          <p className="mt-auto text-[10px] text-ink-soft">
+            {(recipe.prepTime ?? 0) + (recipe.cookTime ?? 0)} min
           </p>
         </Link>
       ) : (

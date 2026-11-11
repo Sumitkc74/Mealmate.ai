@@ -9,12 +9,12 @@
 
   html,
   body {
-    font-family: 'Inter', system-ui, sans-serif;
-    font-feature-settings: 'ss01', 'cv11';
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background-color: #f5efe6;
-    color: #2a2723;
+    background-color: #faf7f2;
+    color: #24211d;
   }
 
   /* Editorial serif for all major headings. Individual components can
@@ -24,7 +24,7 @@
   h3 {
     font-family: 'Fraunces', 'Source Serif 4', Georgia, serif;
     font-feature-settings: 'ss01';
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
   }
 
   h1 {
@@ -33,15 +33,15 @@
 
   /* Subtle, calm selection */
   ::selection {
-    background-color: #f4ddd0;
-    color: #4f261a;
+    background-color: #ecd9cb;
+    color: #431f13;
   }
 }
 
 @layer components {
-  /* Reusable "card" surface tuned for the cream canvas. */
+  /* Reusable structured card surface tuned for the warm neutral canvas */
   .mm-card {
-    @apply rounded-2xl border border-line bg-card shadow-soft;
+    @apply rounded-lg border border-line bg-card;
   }
 
   /* Editorial accent eyebrow used on hero / section headers. */

@@ -1,0 +1,64 @@
+{
+  "benchmark_scenarios_count": 6,
+  "mean_context_precision": 0.9,
+  "mean_allergen_safety": 1.0,
+  "mean_groundedness": 1.0,
+  "p50_latency_ms": 20.17,
+  "p95_latency_ms": 21.76,
+  "scenarios": [
+    {
+      "scenario_name": "Mediterranean Pasta",
+      "retrieved_count": 5,
+      "context_precision": 1.0,
+      "allergen_safety": 1.0,
+      "groundedness": 1.0,
+      "latency_ms": 21.76,
+      "allergen_violations": []
+    },
+    {
+      "scenario_name": "Strict Gluten-Free Dinner",
+      "retrieved_count": 5,
+      "context_precision": 1.0,
+      "allergen_safety": 1.0,
+      "groundedness": 1.0,
+      "latency_ms": 20.17,
+      "allergen_violations": []
+    },
+    {
+      "scenario_name": "Dairy-Free Curry",
+      "retrieved_count": 5,
+      "context_precision": 1.0,
+      "allergen_safety": 1.0,
+      "groundedness": 1.0,
+      "latency_ms": 20.63,
+      "allergen_violations": []
+    },
+    {
+      "scenario_name": "Mexican Avocado Bowl",
+      "retrieved_count": 5,
+      "context_precision": 0.6,
+      "allergen_safety": 1.0,
+      "groundedness": 1.0,
+      "latency_ms": 18.13,
+      "allergen_violations": []
+    },
+    {
+      "scenario_name": "Minimal Pantry Breakfast",
+      "retrieved_count": 5,
+      "context_precision": 1.0,
+      "allergen_safety": 1.0,
+      "groundedness": 1.0,
+      "latency_ms": 18.6,
+      "allergen_violations": []
+    },
+    {
+      "scenario_name": "Nut-Free Stir Fry",
+      "retrieved_count": 5,
+      "context_precision": 0.8,
+      "allergen_safety": 1.0,
+      "groundedness": 1.0,
+      "latency_ms": 19.17,
+      "allergen_violations": []
+    }
+  ]
+}

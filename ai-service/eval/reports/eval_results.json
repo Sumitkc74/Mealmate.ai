@@ -9,7 +9,7 @@
       "recall@10": 1.0,
       "mrr": 0.9154,
       "ndcg@10": 0.9372,
-      "median_latency_ms": 1.54,
+      "median_latency_ms": 3.47,
       "queries": 64.0
     },
     "lsa": {
@@ -17,7 +17,7 @@
       "recall@10": 1.0,
       "mrr": 0.9076,
       "ndcg@10": 0.9314,
-      "median_latency_ms": 1.57,
+      "median_latency_ms": 3.71,
       "queries": 64.0
     },
     "collab": {
@@ -25,7 +25,7 @@
       "recall@10": 0.25,
       "mrr": 0.0574,
       "ndcg@10": 0.1006,
-      "median_latency_ms": 1.65,
+      "median_latency_ms": 3.81,
       "queries": 64.0
     },
     "hybrid": {
@@ -33,7 +33,7 @@
       "recall@10": 1.0,
       "mrr": 0.9154,
       "ndcg@10": 0.9372,
-      "median_latency_ms": 1.73,
+      "median_latency_ms": 3.63,
       "queries": 64.0
     }
   }

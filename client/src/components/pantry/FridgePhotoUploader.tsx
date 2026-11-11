@@ -8,7 +8,7 @@ import { extractErrorMessage } from '@/lib/api';
 import type { PantryItem } from '@/types';
 
 interface Props {
-  /** Existing pantry — we de-dupe by ingredient name. */
+  /** Existing pantry - we de-dupe by ingredient name. */
   existing: PantryItem[];
   /** Called once with the merged pantry. */
   onAdd: (next: PantryItem[]) => Promise<void> | void;
@@ -96,21 +96,21 @@ export function FridgePhotoUploader({ existing, onAdd }: Props) {
   }
 
   return (
-    <section className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-5 shadow-sm">
+    <section className="rounded-lg border border-line bg-card p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900">
-            <span aria-hidden>📷 </span>Fridge photo
+          <h2 className="text-lg font-semibold text-ink">
+            Shelf photo recognition
           </h2>
-          <p className="mt-1 text-xs text-gray-600">
-            Snap a picture of your fridge or pantry shelf — Gemini Vision detects what
-            you have and adds it to your pantry list.
+          <p className="mt-1 text-xs text-ink-soft">
+            Upload an image of your refrigerator or pantry shelf. Vision models identify
+            visible ingredients and add them to your inventory list.
           </p>
         </div>
       </div>
 
       <div
-        className="mt-3 flex cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-emerald-300 bg-white p-6 text-sm text-emerald-700 transition hover:bg-emerald-50"
+        className="mt-3 flex cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-line bg-canvas-soft p-6 text-sm text-ink-soft transition hover:bg-canvas"
         role="button"
         tabIndex={0}
         onClick={pickFile}
@@ -127,8 +127,12 @@ export function FridgePhotoUploader({ existing, onAdd }: Props) {
         {imagePreview ? (
           <img
             src={imagePreview}
-            alt="pantry preview"
-            className="max-h-48 rounded-md shadow"
+            alt="Pantry ingredient preview"
+            width={400}
+            height={192}
+            loading="lazy"
+            decoding="async"
+            className="max-h-48 rounded-md shadow object-contain"
           />
         ) : (
           <span>Drop a photo here or click to choose</span>
@@ -160,9 +164,12 @@ export function FridgePhotoUploader({ existing, onAdd }: Props) {
         </p>
       )}
       {available === false && message && (
-        <p className="mt-3 rounded-md bg-amber-50 p-2 text-xs text-amber-900 ring-1 ring-amber-200">
-          {message}
-        </p>
+        <div className="mt-3 space-y-3">
+          <p className="rounded-md bg-amber-50 p-2 text-xs text-amber-900 ring-1 ring-amber-200">
+            {message} — You can add items manually below.
+          </p>
+          <ManualEntryFallback existing={existing} onAdd={onAdd} />
+        </div>
       )}
 
       {preview.length > 0 && (
@@ -187,5 +194,84 @@ export function FridgePhotoUploader({ existing, onAdd }: Props) {
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Simple manual pantry entry form — shown when AI vision is unavailable.
+ * Accepts one ingredient per line in the format: "name, quantity unit"
+ * e.g. "eggs, 6" or "chicken breast, 200 g"
+ */
+function ManualEntryFallback({
+  existing,
+  onAdd,
+}: {
+  existing: PantryItem[];
+  onAdd: (next: PantryItem[]) => Promise<void> | void;
+}) {
+  const [text, setText] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  async function handleManualAdd() {
+    const lines = text
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (lines.length === 0) return;
+
+    const have = new Set(existing.map((p) => p.ingredient.toLowerCase()));
+    const merged: PantryItem[] = [...existing];
+    for (const line of lines) {
+      const [rawName, rest] = line.split(',');
+      const name = (rawName ?? '').trim().toLowerCase();
+      if (!name || have.has(name)) continue;
+      have.add(name);
+      const parts = (rest ?? '').trim().split(/\s+/);
+      const hasQty = parts[0] && !isNaN(Number(parts[0]));
+      const quantity: string | undefined = hasQty ? parts[0] : undefined;
+      const unit: string | undefined = hasQty ? parts.slice(1).join(' ') || undefined : undefined;
+      merged.push({ ingredient: name, quantity, unit });
+    }
+
+    setAdding(true);
+    setError(null);
+    try {
+      await onAdd(merged);
+      setText('');
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 2000);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not save');
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  return (
+    <div className="rounded-md border border-line bg-canvas-soft p-3">
+      <p className="text-xs font-medium text-ink mb-2">Add items manually</p>
+      <p className="text-[11px] text-ink-soft mb-2">
+        One item per line: <span className="font-mono">eggs, 6</span> or <span className="font-mono">chicken breast, 200 g</span>
+      </p>
+      <textarea
+        rows={4}
+        className="w-full rounded border border-gray-200 bg-white p-2 text-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-200"
+        placeholder={`eggs, 6\nmilk, 1 litre\nbutter, 250 g`}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      {error && <p className="mt-1 text-xs text-red-700">{error}</p>}
+      {success && <p className="mt-1 text-xs text-green-700">Added to pantry.</p>}
+      <Button
+        className="mt-2"
+        onClick={handleManualAdd}
+        loading={adding}
+        disabled={!text.trim()}
+      >
+        Add to pantry
+      </Button>
+    </div>
   );
 }

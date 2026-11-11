@@ -11,10 +11,31 @@ import type {
 
 export const listMealPlans = asyncHandler(async (req, res) => {
   if (!req.user) throw AppError.unauthorized();
-  const plans = await MealPlan.find({ user: req.user.sub })
-    .sort({ weekStartDate: -1 })
-    .populate('days.breakfast days.lunch days.dinner days.snacks', 'title slug imageUrl prepTime cookTime nutrition');
-  res.json({ success: true, items: plans });
+  const query = req.query as Record<string, string | undefined>;
+  const page = Math.max(1, parseInt(String(query.page || '1'), 10) || 1);
+  const limit = Math.min(50, Math.max(1, parseInt(String(query.limit || '20'), 10) || 20));
+  const skip = (page - 1) * limit;
+
+  const [plans, total] = await Promise.all([
+    MealPlan.find({ user: req.user.sub })
+      .sort({ weekStartDate: -1 })
+      .skip(skip)
+      .limit(limit)
+      .populate(
+        'days.breakfast days.lunch days.dinner days.snacks',
+        'title slug imageUrl prepTime cookTime nutrition'
+      ),
+    MealPlan.countDocuments({ user: req.user.sub }),
+  ]);
+
+  res.json({
+    success: true,
+    items: plans,
+    page,
+    limit,
+    total,
+    totalPages: Math.ceil(total / limit),
+  });
 });
 
 export const getMealPlan = asyncHandler<{ id: string }>(async (req, res) => {
@@ -89,21 +110,38 @@ export const assignSlot = asyncHandler<{ id: string }, unknown, AssignSlotInput>
     if (!req.user) throw AppError.unauthorized();
     const { day, slot, recipeId } = req.body;
 
-    const plan = await MealPlan.findOne({ _id: req.params.id, user: req.user.sub });
-    if (!plan) throw AppError.notFound('Meal plan not found');
+    const updateOp = recipeId
+      ? { $set: { [`days.$.${slot}`]: new Types.ObjectId(recipeId) } }
+      : { $unset: { [`days.$.${slot}`]: '' } };
 
-    let dayDoc = plan.days.find((d) => d.day === day);
-    if (!dayDoc) {
-      dayDoc = { day, snacks: [] } as IDayPlan;
-      plan.days.push(dayDoc);
+    let plan = await MealPlan.findOneAndUpdate(
+      { _id: req.params.id, user: req.user.sub, 'days.day': day },
+      updateOp,
+      { new: true }
+    );
+
+    // If day was not present yet, push it atomically
+    if (!plan) {
+      const exists = await MealPlan.exists({ _id: req.params.id, user: req.user.sub });
+      if (!exists) throw AppError.notFound('Meal plan not found');
+
+      plan = await MealPlan.findOneAndUpdate(
+        { _id: req.params.id, user: req.user.sub },
+        {
+          $push: {
+            days: {
+              day,
+              ...(recipeId ? { [slot]: new Types.ObjectId(recipeId) } : {}),
+              snacks: [],
+            },
+          },
+        },
+        { new: true }
+      );
     }
 
-    const value = recipeId ? new Types.ObjectId(recipeId) : undefined;
-    if (slot === 'breakfast') dayDoc.breakfast = value;
-    else if (slot === 'lunch') dayDoc.lunch = value;
-    else dayDoc.dinner = value;
+    if (!plan) throw AppError.notFound('Meal plan not found');
 
-    await plan.save();
     const populatedPlan = await MealPlan.findById(plan._id).populate(
       'days.breakfast days.lunch days.dinner days.snacks',
       'title slug imageUrl prepTime cookTime nutrition ingredients servings'

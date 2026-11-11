@@ -1,0 +1,49 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mealmate-ingress
+  namespace: mealmate
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/proxy-body-size: "16m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+    - hosts:
+        - mealmate.ai
+        - api.mealmate.ai
+      secretName: mealmate-tls
+  rules:
+    - host: mealmate.ai
+      http:
+        paths:
+          # Frontend Client (default catch-all)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mealmate-client
+                port:
+                  number: 80
+          # Express Node Backend API
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: mealmate-server
+                port:
+                  number: 5000
+    - host: api.mealmate.ai
+      http:
+        paths:
+          # Authenticated API gateway (routes all traffic including /api/ai through JWT & rate limiting)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mealmate-server
+                port:
+                  number: 5000
+

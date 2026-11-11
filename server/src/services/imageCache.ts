@@ -129,17 +129,46 @@ export async function cacheRemoteImage(remoteUrl: string): Promise<string | null
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const resp = await fetch(remoteUrl, {
-      signal: controller.signal,
-      headers: {
-        // Some CDNs (Wikipedia) block requests without a UA.
-        'User-Agent': 'MealMate-ImageCache/0.3 (+https://github.com/local)',
-        Accept: 'image/*',
-      },
-      redirect: 'follow',
-    });
-    if (!resp.ok) {
-      logger.info({ url: remoteUrl, status: resp.status }, 'imageCache: upstream returned non-OK');
+    let currentUrl = remoteUrl;
+    let resp: Response | null = null;
+    const maxRedirects = 3;
+
+    // Follow redirects manually to verify every hop against ALLOWED_HOSTS (SSRF mitigation)
+    for (let hop = 0; hop <= maxRedirects; hop++) {
+      let targetUrl: URL;
+      try {
+        targetUrl = new URL(currentUrl);
+      } catch {
+        return null;
+      }
+      if (targetUrl.protocol !== 'https:' && targetUrl.protocol !== 'http:') return null;
+      if (!ALLOWED_HOSTS.has(targetUrl.hostname)) {
+        logger.warn({ currentUrl, host: targetUrl.hostname }, 'imageCache: host not in allow-list, blocking');
+        return null;
+      }
+
+      const candidateResp = await fetch(currentUrl, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'MealMate-ImageCache/0.3 (+https://github.com/local)',
+          Accept: 'image/*',
+        },
+        redirect: 'manual',
+      });
+
+      if ([301, 302, 303, 307, 308].includes(candidateResp.status)) {
+        const loc = candidateResp.headers.get('location');
+        if (!loc) return null;
+        currentUrl = new URL(loc, currentUrl).toString();
+        continue;
+      }
+
+      resp = candidateResp;
+      break;
+    }
+
+    if (!resp || !resp.ok) {
+      logger.info({ url: remoteUrl, status: resp?.status }, 'imageCache: upstream returned non-OK');
       return null;
     }
     const contentType = resp.headers.get('content-type');

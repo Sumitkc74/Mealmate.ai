@@ -80,6 +80,8 @@ class RecommenderService:
         self._matrix = None
         self._lsa = LsaEmbedder()
         self._collab = CollabFilter()
+        self._tfidf_cache: dict[str, np.ndarray] = {}
+        self._lsa_cache: dict[str, np.ndarray] = {}
 
     # ----- lifecycle -----
 
@@ -91,6 +93,8 @@ class RecommenderService:
         if not recipes:
             raise ValueError("Cannot train recommender on empty recipe set")
         self._recipes = recipes
+        self._tfidf_cache.clear()
+        self._lsa_cache.clear()
         docs = [doc_text(r) for r in recipes]
         self._vectorizer = TfidfVectorizer(
             ngram_range=(1, 2),
@@ -103,6 +107,27 @@ class RecommenderService:
         self._lsa.fit(docs)
         self._collab.fit(recipes)
         self._loaded = True
+
+    def sync_db_recipes(self, db_recipes: list[Recipe]) -> int:
+        """Replace the corpus with the actual database recipes from MongoDB and re-fit indexes."""
+        if not db_recipes:
+            return 0
+        self.fit(db_recipes)
+        return len(db_recipes)
+
+    def upsert_recipes(self, new_recipes: list[Recipe]) -> int:
+        """Merge additional recipes into the corpus and re-fit indexes."""
+        if not new_recipes:
+            return 0
+        recipe_map = {r.recipe_id: r for r in self._recipes}
+        added = 0
+        for r in new_recipes:
+            if r.recipe_id not in recipe_map:
+                added += 1
+            recipe_map[r.recipe_id] = r
+        if added > 0 or not self._loaded:
+            self.fit(list(recipe_map.values()))
+        return added
 
     @property
     def is_loaded(self) -> bool:
@@ -134,13 +159,25 @@ class RecommenderService:
         assert self._vectorizer is not None and self._matrix is not None
         if not query.strip():
             return np.zeros(len(self._recipes))
+        if query in self._tfidf_cache:
+            return self._tfidf_cache[query]
         query_vec = self._vectorizer.transform([query])
-        return cosine_similarity(query_vec, self._matrix)[0]
+        sims = cosine_similarity(query_vec, self._matrix)[0]
+        if len(self._tfidf_cache) >= 500:
+            self._tfidf_cache.clear()
+        self._tfidf_cache[query] = sims
+        return sims
 
     def _signal_lsa(self, query: str) -> np.ndarray:
         if not query.strip() or not self._lsa.is_fitted:
             return np.zeros(len(self._recipes))
-        return self._lsa.similarity(query)
+        if query in self._lsa_cache:
+            return self._lsa_cache[query]
+        sims = self._lsa.similarity(query)
+        if len(self._lsa_cache) >= 500:
+            self._lsa_cache.clear()
+        self._lsa_cache[query] = sims
+        return sims
 
     def _signal_collab(self, liked: list[str]) -> np.ndarray:
         if not liked or not self._collab.is_fitted:
@@ -155,6 +192,8 @@ class RecommenderService:
         allergies: list[str] | None = None,
         strategy: Strategy = "hybrid",
         liked_recipe_ids: list[str] | None = None,
+        allowed_recipe_ids: set[str] | None = None,
+        excluded_recipe_ids: set[str] | None = None,
     ) -> list[RecommendedRecipe]:
         if not self._loaded or self._vectorizer is None or self._matrix is None:
             raise RuntimeError("Recommender is not loaded. Call load() first.")
@@ -200,6 +239,10 @@ class RecommenderService:
         scored: list[tuple[float, Recipe, list[str], list[str], int]] = []
         for idx, base_score in enumerate(base):
             recipe = self._recipes[idx]
+            if allowed_recipe_ids is not None and recipe.recipe_id not in allowed_recipe_ids:
+                continue
+            if excluded_recipe_ids is not None and recipe.recipe_id in excluded_recipe_ids:
+                continue
 
             ing_set = {_normalize(i) for i in recipe.ingredients}
             tag_set = {_normalize(t) for t in recipe.tags}

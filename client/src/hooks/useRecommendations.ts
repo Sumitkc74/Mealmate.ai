@@ -6,18 +6,29 @@ import type {
 } from './useAiPlanner';
 
 export interface RecommendedRecipe {
+  _id?: string;
   recipe_id: string;
   title: string;
   score: number;
   matched_ingredients: string[];
+  missing_ingredients?: string[];
+  total_ingredients?: number;
+  coverage?: number;
+  inDatabase?: boolean;
   reason: string;
   signals?: SignalContribution[];
+  imageUrl?: string;
+  prepTime?: number;
+  cookTime?: number;
+  servings?: number;
+  cuisine?: string;
+  difficulty?: string;
 }
 
 export interface RecommendResponse {
   success: boolean;
   count: number;
-  strategy: RecommendStrategy;
+  strategy: RecommendStrategy | 'database' | 'starter';
   results: RecommendedRecipe[];
 }
 
@@ -28,14 +39,16 @@ export interface RecommendParams {
   usePantry?: boolean;
   strategy?: RecommendStrategy;
   liked_recipe_ids?: string[];
+  scope?: 'database' | 'ai' | 'all';
 }
 
-/** Fetch ML-powered recipe suggestions based on the user's pantry & preferences. */
+/** Fetch recipe suggestions based on database pantry comparison or ML recommender. */
 export function useRecommendations(params: RecommendParams = {}, enabled = true) {
   const body = {
     top_k: params.top_k ?? 5,
     usePantry: params.usePantry ?? true,
     strategy: params.strategy ?? 'hybrid',
+    ...(params.scope ? { scope: params.scope } : {}),
     ...(params.ingredients ? { ingredients: params.ingredients } : {}),
     ...(params.dietary_preferences ? { dietary_preferences: params.dietary_preferences } : {}),
     ...(params.liked_recipe_ids ? { liked_recipe_ids: params.liked_recipe_ids } : {}),

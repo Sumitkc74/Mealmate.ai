@@ -4,12 +4,19 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useLogin } from '@/hooks/useAuth';
 import { extractErrorMessage } from '@/lib/api';
+import { usePageMetadata } from '@/hooks/usePageMetadata';
 
 interface LocationState {
   from?: string;
 }
 
 export function LoginPage() {
+  usePageMetadata({
+    title: 'Sign In | MealMate',
+    description:
+      'Sign in to your MealMate account to access your saved recipes, weekly meal planner, live pantry inventory, and automated grocery aisle consolidation.',
+  });
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
@@ -21,11 +28,31 @@ export function LoginPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setFormError(null);
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setFormError('Please enter your email address to sign in.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setFormError('Please enter a valid email address format (e.g. name@domain.com).');
+      return;
+    }
+    if (!password) {
+      setFormError('Please enter your password.');
+      return;
+    }
+
     try {
-      await login.mutateAsync({ email: email.trim().toLowerCase(), password });
+      await login.mutateAsync({ email: trimmedEmail.toLowerCase(), password });
       navigate(from, { replace: true });
     } catch (err) {
-      setFormError(extractErrorMessage(err, 'Invalid email or password'));
+      setFormError(
+        extractErrorMessage(
+          err,
+          'Incorrect email or password. Please verify your credentials or register for an account.'
+        )
+      );
     }
   }
 
@@ -49,7 +76,7 @@ export function LoginPage() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
+            placeholder="name@domain.com"
           />
           <Input
             type="password"

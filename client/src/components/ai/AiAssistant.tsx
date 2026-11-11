@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
 import ReactMarkdown from 'react-markdown';
 
 import {
-  useAiCapabilities,
   useAssistantChat,
+  streamAssistantChat,
   type AppliedAction,
   type ChatMessage,
 } from '@/hooks/useAiPlanner';
+import { useAiStatus } from '@/hooks/useAiStatus';
 import { extractErrorMessage } from '@/lib/api';
 
 /**
@@ -29,12 +31,40 @@ interface ChatTurn {
 }
 
 export function AiAssistant() {
-  const [tab, setTab] = useState<'assistant' | 'recipe-qa'>('assistant');
+  const [tab, setTab] = useState<'assistant' | 'recipe-qa' | 'substitutes'>('assistant');
   const [qaQuestion, setQaDraft] = useState('');
   const [qaHistory, setQaHistory] = useState<{ question: string; answer: string; recipes: any[] }[]>([]);
   const [qaLoading, setQaLoading] = useState(false);
   const [qaError, setQaError] = useState<string | null>(null);
+
+  const [subQuery, setSubQuery] = useState('');
+  const [subResults, setSubResults] = useState<{ target: string; substitute: string; ratio: string; context: string; notes: string }[]>([]);
+  const [subLoading, setSubLoading] = useState(false);
+  const [subError, setSubError] = useState<string | null>(null);
   const token = useAuthStore((s) => s.token);
+
+  async function searchSubstitutes(ing: string) {
+    const clean = ing.trim();
+    if (!clean) return;
+    setSubLoading(true);
+    setSubError(null);
+    try {
+      const res = await fetch(`/api/ai/knowledge/substitutes?ingredient=${encodeURIComponent(clean)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+      const data = await res.json();
+      setSubResults(data.substitutions || []);
+      if (!data.substitutions || data.substitutions.length === 0) {
+        setSubError(`No direct substitutes in Knowledge Graph for "${clean}". Try buttermilk, egg, butter, or soy sauce.`);
+      }
+    } catch (err) {
+      setSubError(extractErrorMessage(err, 'Could not fetch substitutions'));
+      setSubResults([]);
+    } finally {
+      setSubLoading(false);
+    }
+  }
 
   async function sendQA(question: string) {
     const trimmed = question.trim();
@@ -75,85 +105,145 @@ export function AiAssistant() {
     { label: 'Plan a healthy lunch', prompt: 'Plan a healthy lunch under 600 calories.' },
   ]);
 
+  const queryClient = useQueryClient();
   const chat = useAssistantChat();
-  const caps = useAiCapabilities();
+  const aiStatus = useAiStatus();
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [turns, chat.isPending]);
+  }, [turns, chat.isPending, isStreaming]);
 
   async function send(text: string) {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    if (!trimmed || isStreaming || chat.isPending) return;
     setError(null);
     const nextTurns: ChatTurn[] = [...turns, { role: 'user', content: trimmed }];
-    setTurns(nextTurns);
+    setTurns([...nextTurns, { role: 'assistant', content: '', appliedActions: [] }]);
     setDraft('');
-    // The AI service is stateless — send the running message log each time.
+
     const wireMessages: ChatMessage[] = nextTurns.map((t) => ({
       role: t.role,
       content: t.content,
     }));
+
+    setIsStreaming(true);
+
     try {
-      const res = await chat.mutateAsync({ messages: wireMessages });
-      setTurns((curr) => [
-        ...curr,
+      await streamAssistantChat(
+        { messages: wireMessages },
         {
-          role: 'assistant',
-          content: res.reply,
-          appliedActions: res.applied_actions ?? [],
-        },
-      ]);
-      if (res.suggestions?.length) setSuggestions(res.suggestions);
-    } catch (err) {
-      setError(extractErrorMessage(err, 'The assistant is unavailable right now'));
+          onToken: (chunk) => {
+            setTurns((curr) => {
+              const last = curr[curr.length - 1];
+              if (!last || last.role !== 'assistant') return curr;
+              return [
+                ...curr.slice(0, -1),
+                { ...last, content: last.content + chunk },
+              ];
+            });
+          },
+          onDone: (data) => {
+            setIsStreaming(false);
+            setTurns((curr) => {
+              const last = curr[curr.length - 1];
+              return [
+                ...curr.slice(0, -1),
+                {
+                  role: 'assistant',
+                  content: data.reply || last?.content || 'Done.',
+                  appliedActions: data.applied_actions ?? [],
+                },
+              ];
+            });
+            if (data.suggestions?.length) setSuggestions(data.suggestions);
+            if (data.applied_actions?.some((a) => a.status === 'applied')) {
+              queryClient.invalidateQueries({ queryKey: ['mealplans'] });
+              queryClient.invalidateQueries({ queryKey: ['mealplan'] });
+              queryClient.invalidateQueries({ queryKey: ['grocery'] });
+              if (data.applied_actions.some((a) => a.recipe?.generated)) {
+                queryClient.invalidateQueries({ queryKey: ['recipes'] });
+              }
+            }
+          },
+          onError: async () => {
+            // Fallback to standard HTTP mutateAsync
+            try {
+              const res = await chat.mutateAsync({ messages: wireMessages });
+              setTurns((curr) => [
+                ...curr.slice(0, -1),
+                {
+                  role: 'assistant',
+                  content: res.reply,
+                  appliedActions: res.applied_actions ?? [],
+                },
+              ]);
+              if (res.suggestions?.length) setSuggestions(res.suggestions);
+            } catch (fallbackErr) {
+              setError(extractErrorMessage(fallbackErr, 'The assistant is unavailable right now'));
+              setTurns((curr) => curr.slice(0, -1));
+            } finally {
+              setIsStreaming(false);
+            }
+          },
+        }
+      );
+    } catch {
+      // Fallback if streamAssistantChat itself throws synchronously
+      try {
+        const res = await chat.mutateAsync({ messages: wireMessages });
+        setTurns((curr) => [
+          ...curr.slice(0, -1),
+          {
+            role: 'assistant',
+            content: res.reply,
+            appliedActions: res.applied_actions ?? [],
+          },
+        ]);
+        if (res.suggestions?.length) setSuggestions(res.suggestions);
+      } catch (fallbackErr) {
+        setError(extractErrorMessage(fallbackErr, 'The assistant is unavailable right now'));
+        setTurns((curr) => curr.slice(0, -1));
+      } finally {
+        setIsStreaming(false);
+      }
     }
   }
 
-  const llmAvailable = caps.data?.llm?.available ?? false;
-  const provider = caps.data?.llm?.provider;
+  const llmAvailable = aiStatus.llmOnline;
+  const provider = null; // provider name not exposed by useAiStatus; only used for display
 
   return (
     <>
       {/* Floating action button */}
-      <motion.button
+      <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? 'Close cooking assistant' : 'Open cooking assistant'}
-        className="fixed bottom-6 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-700 text-2xl text-white shadow-lg shadow-brand-900/30 ring-2 ring-white"
-        whileHover={{ scale: 1.08, rotate: 4 }}
-        whileTap={{ scale: 0.95 }}
-        animate={{
-          boxShadow: [
-            '0 10px 25px -5px rgba(0,0,0,0.2)',
-            '0 14px 30px -5px rgba(20,90,200,0.35)',
-            '0 10px 25px -5px rgba(0,0,0,0.2)',
-          ],
-        }}
-        transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
+        className="fixed bottom-6 right-6 z-40 flex h-12 px-4 items-center justify-center gap-1.5 rounded-full bg-brand-600 text-sm font-semibold text-white border border-brand-700 shadow-sm hover:bg-brand-700 transition"
       >
-        <span aria-hidden>{open ? '×' : '✨'}</span>
-      </motion.button>
+        <span aria-hidden>{open ? 'Close' : 'Assistant'}</span>
+      </button>
 
       <AnimatePresence>
         {open && (
           <motion.aside
             key="assistant-panel"
-            initial={{ opacity: 0, y: 24, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 24, scale: 0.96 }}
-            transition={{ type: 'spring', stiffness: 280, damping: 28 }}
-            className="fixed bottom-24 right-6 z-40 flex w-[min(92vw,380px)] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ duration: 0.18 }}
+            className="fixed bottom-20 right-6 z-40 flex w-[min(92vw,380px)] flex-col overflow-hidden rounded-lg border border-line bg-card shadow-lg"
             role="dialog"
             aria-label="Cooking assistant"
           >
 
-            <header className="bg-gradient-to-r from-brand-600 to-brand-800 px-4 py-3 text-white">
+            <header className="border-b border-line bg-canvas px-4 py-3 text-ink">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-semibold">MealMate Assistant</p>
-                  <p className="text-[11px] opacity-80">
+                  <p className="text-sm font-semibold text-ink">MealMate Assistant</p>
+                  <p className="text-[11px] text-ink-soft">
                     {llmAvailable
                       ? `Powered by ${provider ?? 'Gemini'}`
                       : 'Offline mode'}
@@ -162,34 +252,54 @@ export function AiAssistant() {
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
-                  className="rounded-full p-1 text-lg leading-none hover:bg-white/10"
+                  className="rounded p-1 text-sm text-ink-soft hover:bg-canvas-soft hover:text-ink"
                   aria-label="Close"
                 >
-                  ×
+                  Close
                 </button>
               </div>
               {/* Tab switcher */}
-              <div className="mt-2 flex gap-1 rounded-lg bg-white/10 p-1">
+              <div className="mt-2 flex gap-1 rounded bg-canvas-soft border border-line p-1">
                 <button
                   type="button"
                   onClick={() => setTab('assistant')}
-                  className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition ${
-                    tab === 'assistant' ? 'bg-white text-brand-700' : 'text-white hover:bg-white/10'
+                  className={`flex-1 rounded px-2 py-1 text-xs font-medium transition ${
+                    tab === 'assistant' ? 'bg-card text-brand-700 border border-line font-semibold' : 'text-ink-soft hover:text-ink'
                   }`}
                 >
-                  ✨ Assistant
+                  Chat
                 </button>
                 <button
                   type="button"
                   onClick={() => setTab('recipe-qa')}
-                  className={`flex-1 rounded-md px-2 py-1 text-xs font-medium transition ${
-                    tab === 'recipe-qa' ? 'bg-white text-brand-700' : 'text-white hover:bg-white/10'
+                  className={`flex-1 rounded px-2 py-1 text-xs font-medium transition ${
+                    tab === 'recipe-qa' ? 'bg-card text-brand-700 border border-line font-semibold' : 'text-ink-soft hover:text-ink'
                   }`}
                 >
-                  📖 Recipe Q&amp;A
+                  Q&amp;A
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTab('substitutes')}
+                  className={`flex-1 rounded px-2 py-1 text-xs font-medium transition ${
+                    tab === 'substitutes' ? 'bg-card text-brand-700 border border-line font-semibold' : 'text-ink-soft hover:text-ink'
+                  }`}
+                >
+                  Swaps
                 </button>
               </div>
             </header>
+
+            {!aiStatus.serviceOnline && !aiStatus.loading && (
+              <div className="mx-4 mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                AI assistant is offline. Start the AI service to use chat.
+                <br />
+                You can still browse your{' '}
+                <a href="/recipes" className="underline font-medium">saved recipes</a>{' '}
+                or check your{' '}
+                <a href="/pantry" className="underline font-medium">pantry</a>.
+              </div>
+            )}
 
             {tab === 'assistant' ? (
               <>
@@ -198,11 +308,16 @@ export function AiAssistant() {
                   className="flex max-h-[55vh] min-h-[260px] flex-1 flex-col gap-2 overflow-y-auto bg-gray-50 p-3"
                 >
                   {turns.length === 0 && (
-                    <div className="rounded-md bg-white p-3 text-sm text-gray-600 shadow-sm">
-                      Ask anything about cooking, substitutions, scaling recipes, or
-                      what to make with what's in your pantry. You can also say
-                      "add chicken stir fry to Friday dinner" and I'll update your
-                      weekly plan.
+                    <div className="rounded-md bg-white p-3 text-sm text-gray-600 shadow-sm space-y-2">
+                      <p>
+                        Ask anything about cooking, substitutions, scaling recipes, or
+                        what to make with what's in your pantry. You can also say
+                        "add chicken stir fry to Friday dinner" and I'll update your
+                        weekly plan.
+                      </p>
+                      <div className="rounded border border-amber-200 bg-amber-50/70 p-2 text-[11px] text-amber-900 leading-normal">
+                        <strong>Notice:</strong> Assistant responses are computational estimates and not clinical medical or dietetic advice. Always verify allergens on physical packaging.
+                      </div>
                     </div>
                   )}
                   {turns.map((m, i) => (
@@ -222,11 +337,15 @@ export function AiAssistant() {
                             : 'bg-white text-gray-800'
                         }`}
                       >
-                        {m.content.split('\n').map((line, j) => (
-                          <p key={j} className={j > 0 ? 'mt-1' : undefined}>
-                            {line}
-                          </p>
-                        ))}
+                        {m.content ? (
+                          m.content.split('\n').map((line, j) => (
+                            <p key={j} className={j > 0 ? 'mt-1' : undefined}>
+                              {line}
+                            </p>
+                          ))
+                        ) : (
+                          <TypingDots />
+                        )}
                       </div>
                       {m.role === 'assistant' &&
                         m.appliedActions?.map((action, k) => (
@@ -234,7 +353,7 @@ export function AiAssistant() {
                         ))}
                     </motion.div>
                   ))}
-                  {chat.isPending && (
+                  {(chat.isPending || isStreaming) && turns[turns.length - 1]?.role !== 'assistant' && (
                     <div className="self-start rounded-2xl bg-white px-3 py-2 text-sm text-gray-500 shadow-sm">
                       <TypingDots />
                     </div>
@@ -273,20 +392,22 @@ export function AiAssistant() {
                   <input
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
+                    maxLength={500}
                     placeholder="Ask the assistant…"
                     aria-label="Chat message"
+                    disabled={!aiStatus.serviceOnline}
                     className="flex-1 rounded-full border border-gray-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-200"
                   />
                   <button
                     type="submit"
-                    disabled={chat.isPending || !draft.trim()}
+                    disabled={!aiStatus.serviceOnline || chat.isPending || isStreaming || !draft.trim()}
                     className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition disabled:opacity-50 enabled:hover:bg-brand-700"
                   >
                     Send
                   </button>
                 </form>
               </>
-            ) : (
+            ) : tab === 'recipe-qa' ? (
               <>
                 {/* Recipe Q&A tab */}
                 <div
@@ -295,8 +416,8 @@ export function AiAssistant() {
                 >
                   {qaHistory.length === 0 && (
                     <div className="rounded-md bg-white p-3 text-sm text-gray-600 shadow-sm">
-                      <p className="font-medium text-gray-800 mb-1">📖 Recipe Database Q&A</p>
-                      <p>Ask anything about recipes in our system — ingredients, substitutes, cooking methods. Answers come <span className="font-medium">only</span> from our recipe database.</p>
+                      <p className="font-medium text-gray-800 mb-1">Recipe Database Q&A</p>
+                      <p>Ask anything about recipes in our system - ingredients, substitutes, cooking methods. Answers come <span className="font-medium">only</span> from our recipe database.</p>
                       <div className="mt-2 flex flex-wrap gap-1">
                         {[
                           'What can I substitute for eggs?',
@@ -362,6 +483,7 @@ export function AiAssistant() {
                   <input
                     value={qaQuestion}
                     onChange={(e) => setQaDraft(e.target.value)}
+                    maxLength={500}
                     placeholder="Ask about our recipes…"
                     aria-label="Recipe question"
                     className="flex-1 rounded-full border border-gray-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-200"
@@ -372,6 +494,93 @@ export function AiAssistant() {
                     className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition disabled:opacity-50 enabled:hover:bg-brand-700"
                   >
                     Ask
+                  </button>
+                </form>
+              </>
+            ) : (
+              <>
+                {/* Knowledge Graph Substitutes tab */}
+                <div className="flex max-h-[55vh] min-h-[260px] flex-1 flex-col gap-2 overflow-y-auto bg-gray-50 p-3">
+                  <div className="rounded-md bg-white p-3 text-sm text-gray-600 shadow-sm">
+                    <p className="font-medium text-gray-800 mb-1">Knowledge Graph Swaps</p>
+                    <p className="text-xs text-gray-500 mb-2">
+                      Find verified culinary substitutes with volumetric ratios and flavor context from our graph database.
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {['Buttermilk', 'Egg', 'Butter', 'Heavy Cream', 'Soy Sauce', 'All-Purpose Flour'].map((item) => (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => {
+                            setSubQuery(item);
+                            searchSubstitutes(item);
+                          }}
+                          className="rounded-full bg-brand-50 px-2 py-1 text-xs text-brand-700 hover:bg-brand-100 transition"
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {subLoading && (
+                    <div className="self-start rounded-2xl bg-white px-3 py-2 text-sm text-gray-500 shadow-sm">
+                      <TypingDots />
+                    </div>
+                  )}
+
+                  {subResults.length > 0 && (
+                    <div className="flex flex-col gap-2">
+                      {subResults.map((sub, idx) => (
+                        <div key={idx} className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-gray-900 text-sm">{sub.substitute}</span>
+                            <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">
+                              Ratio: {sub.ratio}
+                            </span>
+                          </div>
+                          {sub.context && (
+                            <span className="mt-1 inline-block rounded bg-gray-100 px-1.5 py-0.5 text-[10px] uppercase font-bold text-gray-600">
+                              {sub.context}
+                            </span>
+                          )}
+                          {sub.notes && (
+                            <p className="mt-1.5 text-xs text-gray-600 italic">
+                              "{sub.notes}"
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {subError && (
+                  <p role="alert" className="border-t border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    {subError}
+                  </p>
+                )}
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    searchSubstitutes(subQuery);
+                  }}
+                  className="flex items-center gap-2 border-t border-gray-100 bg-white p-2"
+                >
+                  <input
+                    value={subQuery}
+                    onChange={(e) => setSubQuery(e.target.value)}
+                    placeholder="Search ingredient (e.g. buttermilk)…"
+                    aria-label="Substitute search"
+                    className="flex-1 rounded-full border border-gray-200 px-3 py-2 text-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                  />
+                  <button
+                    type="submit"
+                    disabled={subLoading || !subQuery.trim()}
+                    className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition disabled:opacity-50 enabled:hover:bg-brand-700"
+                  >
+                    Find
                   </button>
                 </form>
               </>
@@ -415,8 +624,8 @@ function AppliedActionCard({ action }: { action: AppliedAction }) {
           ? 'Invalid request'
           : 'Could not add';
     return (
-      <div className="w-full max-w-[280px] rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 shadow-sm">
-        <p className="font-semibold">⚠️ {statusLabel}</p>
+      <div className="w-full max-w-[280px] rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 shadow-sm">
+        <p className="font-semibold">{statusLabel}</p>
         {action.message && <p className="mt-0.5 opacity-90">{action.message}</p>}
       </div>
     );
@@ -433,27 +642,29 @@ function AppliedActionCard({ action }: { action: AppliedAction }) {
         : `in ${action.requested.week_offset} weeks`;
 
   return (
-    <div className="w-full max-w-[300px] overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50 text-xs text-emerald-900 shadow-sm">
+    <div className="w-full max-w-[300px] overflow-hidden rounded-lg border border-line bg-card text-xs text-ink shadow-sm">
       {recipe.imageUrl && (
         <img
           src={recipe.imageUrl}
           alt={recipe.title}
-          className="h-28 w-full object-cover"
+          width={300}
+          height={112}
           loading="lazy"
+          decoding="async"
+          className="h-28 w-full object-cover"
           onError={(e) => {
-            // Hide gracefully if the URL is broken or blocked — we don't have
+            // Hide gracefully if the URL is broken or blocked - we don't have
             // local state in this card so just remove the element.
             (e.currentTarget as HTMLImageElement).style.display = 'none';
           }}
         />
       )}
       <div className="px-3 py-2">
-        <p className="flex flex-wrap items-center gap-1 font-semibold">
-          <span aria-hidden>✓</span>
+        <p className="flex flex-wrap items-center gap-1 font-semibold text-ink">
           Added <span className="font-bold">{recipe.title}</span>
           {recipe.generated && (
-            <span className="ml-1 rounded-full bg-emerald-200/60 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
-              ✨ AI-generated
+            <span className="ml-1 rounded bg-canvas-soft border border-line px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-soft">
+              Generated
             </span>
           )}
         </p>

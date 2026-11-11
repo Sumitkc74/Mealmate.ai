@@ -14,7 +14,7 @@ interface State {
  * component and surfaces a recovery UI instead of leaving the app blank.
  *
  * Async errors (fetch failures etc.) are handled per-component via TanStack
- * Query's `isError` state — this boundary is for genuine render crashes.
+ * Query's `isError` state - this boundary is for genuine render crashes.
  */
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null };
