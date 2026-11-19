@@ -2,7 +2,8 @@ import { Outlet, useLocation, Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Navbar } from './Navbar';
 import { AiAssistant } from '@/components/ai/AiAssistant';
-import { CookieConsentBanner, openCookiePreferencesModal } from '@/components/ui/CookieConsentBanner';
+import { CookieConsentBanner } from '@/components/ui/CookieConsentBanner';
+import { openCookiePreferencesModal } from '@/components/ui/cookiePreferences';
 import { useAuthStore } from '@/stores/authStore';
 
 export function AppLayout() {

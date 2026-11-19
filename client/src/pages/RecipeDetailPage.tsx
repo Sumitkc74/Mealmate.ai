@@ -54,7 +54,7 @@ export function RecipeDetailPage() {
   const recipeCookingHistory = useMemo(() => {
     if (!user?.cookingHistory || !recipe) return [];
     return user.cookingHistory.filter((h) => h.recipeId === recipe.id);
-  }, [user?.cookingHistory, recipe?.id]);
+  }, [user?.cookingHistory, recipe]);
 
   // In-Instruction Active Timer state
   const [activeTimer, setActiveTimer] = useState<{
@@ -64,12 +64,16 @@ export function RecipeDetailPage() {
     running: boolean;
   } | null>(null);
 
-  const timerIntervalRef = useRef<any>(null);
+  const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Play audio chime when timer completes
   function playTimerFinishChime() {
     try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -81,7 +85,9 @@ export function RecipeDetailPage() {
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.8);
       osc.start();
       osc.stop(ctx.currentTime + 0.8);
-    } catch {}
+    } catch {
+      // AudioContext unavailable or restricted — the chime is best-effort.
+    }
   }
 
   // Active Timer countdown loop
@@ -91,7 +97,7 @@ export function RecipeDetailPage() {
         setActiveTimer((prev) => {
           if (!prev) return null;
           if (prev.seconds <= 1) {
-            clearInterval(timerIntervalRef.current);
+            if (timerIntervalRef.current !== null) clearInterval(timerIntervalRef.current);
             playTimerFinishChime();
             return { ...prev, seconds: 0, running: false };
           }
@@ -99,8 +105,13 @@ export function RecipeDetailPage() {
         });
       }, 1000);
     }
-    return () => clearInterval(timerIntervalRef.current);
-  }, [activeTimer?.running, activeTimer?.seconds]);
+    return () => {
+      if (timerIntervalRef.current !== null) clearInterval(timerIntervalRef.current);
+    };
+    // activeTimer is the value the effect reads; it already re-runs every
+    // tick because activeTimer.seconds is a dep, so listing the object
+    // itself does not change the re-run cadence.
+  }, [activeTimer, activeTimer?.running, activeTimer?.seconds]);
 
   function showToast(msg: string) {
     setToastMessage(msg);

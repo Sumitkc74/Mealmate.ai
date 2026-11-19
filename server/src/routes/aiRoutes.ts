@@ -6,7 +6,8 @@ import { validate } from '../middleware/validate';
 import { asyncHandler } from '../utils/asyncHandler';
 import { AppError } from '../utils/AppError';
 import { User } from '../models/User';
-import { Recipe } from '../models/Recipe';
+import { Recipe, type IRecipeIngredient } from '../models/Recipe';
+import type { Types } from 'mongoose';
 import {
   generateWeekPlan,
   getAssistantReply,
@@ -254,7 +255,7 @@ router.post(
 function normalizeIngredientName(raw: string): string {
   return raw
     .toLowerCase()
-    .replace(/[,\/()]/g, ' ')
+    .replace(/[,/()]/g, ' ')
     .replace(
       /\b(fresh|dried|chopped|diced|minced|sliced|cooked|raw|boneless|skinless|ground|cloves?|pinch|bunch|tbsp|tsp|cup|cups|oz|grams?|kg|ml|tablespoon|teaspoon|can|cans|package|packages)\b/g,
       ''
@@ -286,9 +287,27 @@ function doesIngredientMatch(pantryItem: string, recipeItem: string): boolean {
   return pWords.some((pw) => rWords.some((rw) => pw === rw || rw.startsWith(pw) || pw.startsWith(rw)));
 }
 
-function compareRecipeWithPantry(recipe: any, pantryIngredients: string[]) {
+/**
+ * Minimal shape of a lean Recipe document used for pantry ranking.
+ * Ingredients are string | object because older catalog rows may store
+ * plain strings, while current rows store { name, quantity, unit }.
+ */
+interface PantryRankRecipe {
+  _id: Types.ObjectId;
+  slug: string;
+  title: string;
+  ingredients: Array<string | IRecipeIngredient>;
+  imageUrl?: string;
+  prepTime: number;
+  cookTime: number;
+  servings: number;
+  cuisine?: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+}
+
+function compareRecipeWithPantry(recipe: PantryRankRecipe, pantryIngredients: string[]) {
   const recipeIngs: string[] = (recipe.ingredients || [])
-    .map((i: any) => (typeof i === 'string' ? i : i.name || '').trim())
+    .map((i: string | IRecipeIngredient) => (typeof i === 'string' ? i : i.name || '').trim())
     .filter((n: string) => n.length > 0);
 
   if (recipeIngs.length === 0) {
@@ -342,7 +361,7 @@ function compareRecipeWithPantry(recipe: any, pantryIngredients: string[]) {
 }
 
 function rankDbRecipes(
-  recipes: any[],
+  recipes: PantryRankRecipe[],
   pantryIngredients: string[],
   topK: number
 ) {

@@ -1,6 +1,35 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type { Recipe } from '@/types';
 import { Button } from '@/components/ui/Button';
+
+/**
+ * Minimal shape of the Web Speech API recognition object (not in the TS
+ * DOM lib) plus the prefixed window globals it and AudioContext may use.
+ */
+interface SpeechRecognitionResultItem {
+  transcript: string;
+}
+
+interface SpeechRecognitionEvent {
+  results: ArrayLike<ArrayLike<SpeechRecognitionResultItem>>;
+}
+
+interface SpeechRecognitionInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+interface WindowWithSpeech {
+  SpeechRecognition?: new () => SpeechRecognitionInstance;
+  webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
+  webkitAudioContext?: typeof AudioContext;
+}
 
 interface KitchenModeModalProps {
   isOpen: boolean;
@@ -18,8 +47,8 @@ export function KitchenModeModal({ isOpen, onClose, recipe }: KitchenModeModalPr
   const [timerSeconds, setTimerSeconds] = useState<number | null>(null);
   const [timerRunning, setTimerRunning] = useState(false);
 
-  const recognitionRef = useRef<any>(null);
-  const timerIntervalRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const totalSteps = recipe.instructions.length;
   const currentInstruction = recipe.instructions[currentStep] || '';
@@ -28,7 +57,10 @@ export function KitchenModeModal({ isOpen, onClose, recipe }: KitchenModeModalPr
   // Web Audio chime for timer finish
   function playTimerChime() {
     try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const AudioCtx =
+        window.AudioContext || (window as unknown as WindowWithSpeech).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
@@ -51,7 +83,7 @@ export function KitchenModeModal({ isOpen, onClose, recipe }: KitchenModeModalPr
       timerIntervalRef.current = setInterval(() => {
         setTimerSeconds((prev) => {
           if (prev !== null && prev <= 1) {
-            clearInterval(timerIntervalRef.current);
+            if (timerIntervalRef.current !== null) clearInterval(timerIntervalRef.current);
             setTimerRunning(false);
             playTimerChime();
             return 0;
@@ -60,17 +92,22 @@ export function KitchenModeModal({ isOpen, onClose, recipe }: KitchenModeModalPr
         });
       }, 1000);
     }
-    return () => clearInterval(timerIntervalRef.current);
+    return () => {
+      if (timerIntervalRef.current !== null) clearInterval(timerIntervalRef.current);
+    };
   }, [timerRunning, timerSeconds]);
 
   // Read current step aloud using SpeechSynthesis
-  function speakCurrentStep(text?: string) {
-    if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text || currentInstruction);
-    utterance.rate = 0.95;
-    window.speechSynthesis.speak(utterance);
-  }
+  const speakCurrentStep = useCallback(
+    (text?: string) => {
+      if (!('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text || currentInstruction);
+      utterance.rate = 0.95;
+      window.speechSynthesis.speak(utterance);
+    },
+    [currentInstruction]
+  );
 
   // Handle Speech Recognition for hands-free commands
   useEffect(() => {
@@ -78,13 +115,16 @@ export function KitchenModeModal({ isOpen, onClose, recipe }: KitchenModeModalPr
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
-        } catch {}
+        } catch {
+          // Recognition may already be stopped — stopping it again is harmless.
+        }
       }
       return;
     }
 
     const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      (window as unknown as WindowWithSpeech).SpeechRecognition ||
+      (window as unknown as WindowWithSpeech).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
       setLastTranscript('Voice recognition is not supported in this browser.');
@@ -98,9 +138,9 @@ export function KitchenModeModal({ isOpen, onClose, recipe }: KitchenModeModalPr
     rec.interimResults = false;
     rec.lang = 'en-US';
 
-    rec.onresult = (event: any) => {
+    rec.onresult = (event: SpeechRecognitionEvent) => {
       const last = event.results[event.results.length - 1];
-      const text = last[0]?.transcript?.trim().toLowerCase() || '';
+      const text = last?.[0]?.transcript?.trim().toLowerCase() || '';
       setLastTranscript(text);
 
       if (text.includes('next') || text.includes('forward')) {
@@ -120,8 +160,10 @@ export function KitchenModeModal({ isOpen, onClose, recipe }: KitchenModeModalPr
       } else if (text.includes('timer')) {
         const match = text.match(/(\d+)\s*(minute|min|second|sec)/);
         if (match) {
-          const num = parseInt(match[1], 10);
-          const isSec = match[2].startsWith('sec');
+          // Both capture groups are required by the regex, so they are
+          // present on a match; the ?? fallbacks only satisfy the checker.
+          const num = parseInt(match[1] ?? '', 10);
+          const isSec = (match[2] ?? '').startsWith('sec');
           const secs = isSec ? num : num * 60;
           setTimerSeconds(secs);
           setTimerRunning(true);
@@ -143,20 +185,28 @@ export function KitchenModeModal({ isOpen, onClose, recipe }: KitchenModeModalPr
       if (voiceActive) {
         try {
           rec.start();
-        } catch {}
+        } catch {
+          // Restart can throw if recognition is already starting; the next
+          // onend will retry, so there is nothing to do here.
+        }
       }
     };
 
     try {
       rec.start();
-    } catch {}
+    } catch {
+      // Speech recognition may fail to start (e.g. permissions denied) —
+      // voice control simply stays off.
+    }
 
     return () => {
       try {
         rec.stop();
-      } catch {}
+      } catch {
+        // Recognition may already be stopped when the effect cleans up.
+      }
     };
-  }, [isOpen, voiceActive, totalSteps, recipe.instructions, currentInstruction, onClose]);
+  }, [isOpen, voiceActive, totalSteps, recipe.instructions, currentInstruction, onClose, speakCurrentStep]);
 
   // Stop audio on unmount or close
   useEffect(() => {

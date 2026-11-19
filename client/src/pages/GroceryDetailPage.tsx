@@ -362,7 +362,9 @@ export function GroceryDetailPage() {
                 setSortBy(val);
                 try {
                   localStorage.setItem('mealmate_grocery_sort', val);
-                } catch {}
+                } catch {
+                  // Private mode / storage unavailable — the sort choice just isn't persisted.
+                }
               }}
               className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-700 shadow-sm transition hover:border-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 cursor-pointer"
             >
@@ -386,7 +388,9 @@ export function GroceryDetailPage() {
                 setGroupByCategory(val);
                 try {
                   localStorage.setItem('mealmate_grocery_group', String(val));
-                } catch {}
+                } catch {
+                  // Private mode / storage unavailable — the grouping choice just isn't persisted.
+                }
               }}
               className="h-4 w-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 cursor-pointer"
             />

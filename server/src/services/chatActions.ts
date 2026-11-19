@@ -188,7 +188,7 @@ function parseExplicitDate(text: string, now: Date = new Date()): Date | null {
 
   // Numeric M/D or M/D/YYYY (or with dashes). Skip if it looks like a
   // ratio / fraction context by requiring word boundaries.
-  const mdy = lower.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](20\d{2}))?\b/);
+  const mdy = lower.match(/\b(\d{1,2})[/-](\d{1,2})(?:[/-](20\d{2}))?\b/);
   if (mdy) {
     const m = Number(mdy[1]);
     const d = Number(mdy[2]);

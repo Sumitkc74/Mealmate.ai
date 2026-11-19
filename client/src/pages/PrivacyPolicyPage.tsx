@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { openCookiePreferencesModal } from '@/components/ui/CookieConsentBanner';
+import { openCookiePreferencesModal } from '@/components/ui/cookiePreferences';
 import { usePageMetadata } from '@/hooks/usePageMetadata';
 
 export function PrivacyPolicyPage() {

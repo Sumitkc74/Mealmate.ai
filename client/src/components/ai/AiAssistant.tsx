@@ -30,10 +30,15 @@ interface ChatTurn {
   appliedActions?: AppliedAction[];
 }
 
+/** A recipe reference returned with a recipe-QA answer (only the title is rendered). */
+interface QaRecipeRef {
+  title: string;
+}
+
 export function AiAssistant() {
   const [tab, setTab] = useState<'assistant' | 'recipe-qa' | 'substitutes'>('assistant');
   const [qaQuestion, setQaDraft] = useState('');
-  const [qaHistory, setQaHistory] = useState<{ question: string; answer: string; recipes: any[] }[]>([]);
+  const [qaHistory, setQaHistory] = useState<{ question: string; answer: string; recipes: QaRecipeRef[] }[]>([]);
   const [qaLoading, setQaLoading] = useState(false);
   const [qaError, setQaError] = useState<string | null>(null);
 
@@ -451,7 +456,7 @@ export function AiAssistant() {
                               From our database
                             </p>
                             <div className="flex flex-wrap gap-1">
-                              {item.recipes.slice(0, 3).map((r: any, j: number) => (
+                              {item.recipes.slice(0, 3).map((r: QaRecipeRef, j: number) => (
                                 <span
                                   key={j}
                                   className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] text-violet-700 ring-1 ring-violet-200"

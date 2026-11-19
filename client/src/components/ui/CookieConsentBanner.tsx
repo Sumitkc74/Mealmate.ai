@@ -1,28 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from './Button';
-
-export interface CookiePreferences {
-  essential: true;
-  analytics: boolean;
-  marketing: boolean;
-  decidedAt: string;
-}
-
-const STORAGE_KEY = 'mealmate_cookie_consent';
-
-export function getStoredCookiePreferences(): CookiePreferences | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as CookiePreferences) : null;
-  } catch {
-    return null;
-  }
-}
-
-export function openCookiePreferencesModal() {
-  window.dispatchEvent(new CustomEvent('mealmate:open-cookie-modal'));
-}
+import {
+  getStoredCookiePreferences,
+  saveCookiePreferences,
+} from './cookiePreferences';
 
 export function CookieConsentBanner() {
   const [showBanner, setShowBanner] = useState(false);
@@ -50,17 +32,7 @@ export function CookieConsentBanner() {
   }, []);
 
   function savePreferences(analytics: boolean, marketing: boolean) {
-    const prefs: CookiePreferences = {
-      essential: true,
-      analytics,
-      marketing,
-      decidedAt: new Date().toISOString(),
-    };
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
-    } catch {
-      // storage unavailable
-    }
+    saveCookiePreferences(analytics, marketing);
     setShowBanner(false);
     setShowModal(false);
   }

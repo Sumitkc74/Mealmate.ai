@@ -240,9 +240,14 @@ export async function streamAssistantChat(
   let buffer = '';
 
   try {
-    while (true) {
+    // Read the SSE stream until the reader reports done. `streamDone` is
+    // assigned from every chunk, so the loop exits as soon as the server
+    // closes the stream (a fetch failure is caught below instead).
+    let streamDone = false;
+    while (!streamDone) {
       const { done, value } = await reader.read();
-      if (done) break;
+      streamDone = done;
+      if (streamDone) break;
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n\n');
       buffer = lines.pop() ?? '';

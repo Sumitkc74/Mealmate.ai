@@ -243,13 +243,11 @@ describe('recipeImportParser', () => {
   describe('Sample templates downloaders', () => {
     it('executes downloadSampleCsvTemplate without throwing in DOM environment', () => {
       const clickMock = vi.fn();
-      const appendMock = vi.spyOn(document.body, 'appendChild').mockImplementation(() => null as any);
-      const removeMock = vi.spyOn(document.body, 'removeChild').mockImplementation(() => null as any);
-      const createElementSpy = vi.spyOn(document, 'createElement').mockReturnValue({
-        set href(_val: string) {},
-        set download(_val: string) {},
-        click: clickMock,
-      } as any);
+      const appendMock = vi.spyOn(document.body, 'appendChild').mockImplementation(() => document.createTextNode(''));
+      const removeMock = vi.spyOn(document.body, 'removeChild').mockImplementation(() => document.createTextNode(''));
+      const anchor = document.createElement('a');
+      anchor.click = clickMock;
+      const createElementSpy = vi.spyOn(document, 'createElement').mockReturnValue(anchor);
 
       // URL mocks
       const createObjectURLMock = vi.fn().mockReturnValue('blob:mock-url');
@@ -267,13 +265,11 @@ describe('recipeImportParser', () => {
 
     it('executes downloadSampleExcelTemplate without throwing', () => {
       const clickMock = vi.fn();
-      const appendMock = vi.spyOn(document.body, 'appendChild').mockImplementation(() => null as any);
-      const removeMock = vi.spyOn(document.body, 'removeChild').mockImplementation(() => null as any);
-      const createElementSpy = vi.spyOn(document, 'createElement').mockReturnValue({
-        set href(_val: string) {},
-        set download(_val: string) {},
-        click: clickMock,
-      } as any);
+      const appendMock = vi.spyOn(document.body, 'appendChild').mockImplementation(() => document.createTextNode(''));
+      const removeMock = vi.spyOn(document.body, 'removeChild').mockImplementation(() => document.createTextNode(''));
+      const anchor = document.createElement('a');
+      anchor.click = clickMock;
+      const createElementSpy = vi.spyOn(document, 'createElement').mockReturnValue(anchor);
 
       const createObjectURLMock = vi.fn().mockReturnValue('blob:mock-url');
       const revokeObjectURLMock = vi.fn();

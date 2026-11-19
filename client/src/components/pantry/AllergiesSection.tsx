@@ -1,27 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-
-export interface AllergenPreset {
-  id: string;
-  label: string;
-}
-
-export const ALLERGEN_PRESETS: AllergenPreset[] = [
-  { id: 'peanuts', label: 'Peanuts' },
-  { id: 'tree-nuts', label: 'Tree Nuts' },
-  { id: 'dairy', label: 'Milk / Dairy' },
-  { id: 'eggs', label: 'Eggs' },
-  { id: 'shellfish', label: 'Shellfish' },
-  { id: 'fish', label: 'Fish' },
-  { id: 'wheat', label: 'Wheat / Gluten' },
-  { id: 'soy', label: 'Soy' },
-  { id: 'sesame', label: 'Sesame' },
-  { id: 'alliums', label: 'Alliums' },
-  { id: 'mustard', label: 'Mustard' },
-  { id: 'celery', label: 'Celery' },
-  { id: 'sulfites', label: 'Sulfites' },
-];
+import { ALLERGEN_PRESETS } from './allergenPresets';
 
 interface Props {
   allergies: string[];

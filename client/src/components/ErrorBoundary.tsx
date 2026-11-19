@@ -26,7 +26,6 @@ export class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, info: ErrorInfo): void {
     // Surface to the console for dev; in production this is where a Sentry
     // (or similar) hook would go.
-    // eslint-disable-next-line no-console
     console.error('Unhandled render error:', error, info.componentStack);
   }
 
