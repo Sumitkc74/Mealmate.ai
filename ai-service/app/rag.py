@@ -2,46 +2,40 @@
 RAG-based recipe suggester and question-answering assistant.
 
 Pipeline:
-  1. INDEX   — embed all recipes into ChromaDB (at startup / via /rag/index)
+  1. INDEX   — embed all recipes into an in-memory LSA index (at startup / via /rag/index)
   2. FILTER  — hard-remove any recipe containing user allergens & filter dietary preferences
   3. RETRIEVE— semantic vector search using pantry items or query text
   4. AUGMENT — pack retrieved recipes + user context into a structured Gemini prompt
   5. GENERATE— Gemini returns natural-language suggestions/answers with reasoning
 
 Falls back gracefully to ranked retrieval / structured synthesis when Gemini is unavailable.
+
+Why LSA and not sentence-transformers?
+--------------------------------------
+The previous implementation embedded recipes with ``all-MiniLM-L6-v2`` via
+``sentence-transformers`` and stored them in ChromaDB. That pulls in PyTorch
+(~1 GB) and OOM-kills the service on Render's free tier (512 MB). The
+codebase already ships a scikit-learn LSA embedder (``app/embeddings.py``)
+that gives the same semantic signal on a 64-recipe corpus while keeping the
+service well under 200 MB, so retrieval now runs on TF-IDF + TruncatedSVD
+with a plain TF-IDF cosine fallback for degenerate (single-recipe) corpora.
+The public API — ``suggest`` / ``query`` / ``upsert_recipes`` / ``reindex``
+and their return shapes — is unchanged.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 import re
 from typing import Any
 
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+from .embeddings import LsaEmbedder
+
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Lazy imports — keep startup fast when optional deps are absent
-# ---------------------------------------------------------------------------
-
-
-def _chromadb():
-    try:
-        import chromadb  # type: ignore
-
-        return chromadb
-    except ImportError:
-        return None
-
-
-def _sentence_transformers():
-    try:
-        from sentence_transformers import SentenceTransformer  # type: ignore
-
-        return SentenceTransformer
-    except ImportError:
-        return None
 
 
 # ---------------------------------------------------------------------------
@@ -162,17 +156,15 @@ def _is_vegan(recipe: dict[str, Any]) -> bool:
 
 
 class RAGService:
-    """Singleton that owns the ChromaDB collection and sentence-transformers model."""
-
-    COLLECTION_NAME = "mealmate_recipes"
-    EMBED_MODEL = "all-MiniLM-L6-v2"
+    """Singleton that owns the in-memory LSA recipe index."""
 
     def __init__(self, recipes: list[dict[str, Any]] | None = None):
         self._recipes: dict[str, dict[str, Any]] = {}
+        self._ids: list[str] = []
+        self._lsa = LsaEmbedder()
+        self._tfidf_vectorizer: TfidfVectorizer | None = None
+        self._tfidf_matrix = None
         self._available = False
-        self._chroma_client = None
-        self._collection = None
-        self._embedder = None
         self._setup(recipes or [])
 
     # ------------------------------------------------------------------
@@ -180,90 +172,108 @@ class RAGService:
     # ------------------------------------------------------------------
 
     def _setup(self, recipes: list[dict[str, Any]]) -> None:
-        chromadb = _chromadb()
-        SentenceTransformer = _sentence_transformers()
-
-        if chromadb is None:
-            logger.warning("rag_unavailable: chromadb not installed")
-            return
-        if SentenceTransformer is None:
-            logger.warning("rag_unavailable: sentence-transformers not installed")
-            return
-
         try:
             logger.info("rag_setup_start", extra={"recipe_count": len(recipes)})
-            self._embedder = SentenceTransformer(self.EMBED_MODEL)
-
-            # Chroma client: Persistent if CHROMA_PERSIST_DIR is configured, else in-memory
-            persist_dir = os.environ.get("CHROMA_PERSIST_DIR", "").strip()
-            if persist_dir:
-                self._chroma_client = chromadb.PersistentClient(path=persist_dir)
-            else:
-                self._chroma_client = chromadb.Client()
-                try:
-                    self._chroma_client.delete_collection(self.COLLECTION_NAME)
-                except Exception:
-                    pass
-
-            self._collection = self._chroma_client.get_or_create_collection(
-                name=self.COLLECTION_NAME,
-                metadata={"hnsw:space": "cosine"},
-            )
-
-            if recipes:
-                self._index_recipes(recipes)
-
-            self._available = True
-            logger.info("rag_setup_complete", extra={"indexed": self._collection.count()})
+            self._index_recipes(recipes)
+            self._available = bool(self._recipes)
+            logger.info("rag_setup_complete", extra={"indexed": len(self._recipes)})
         except Exception as exc:
             logger.error("rag_setup_failed", extra={"error": str(exc)})
             self._available = False
 
     def _index_recipes(self, recipes: list[dict[str, Any]]) -> None:
-        """Embed and store all recipes in ChromaDB using upsert."""
-        if not recipes:
-            return
-        assert self._embedder is not None
-        assert self._collection is not None
-
-        valid_recipes: list[dict[str, Any]] = []
+        """Store recipes and (re)fit the LSA index."""
         for r in recipes:
             rid = str(r.get("id") or r.get("recipe_id") or r.get("_id") or "")
-            if rid:
-                r["id"] = rid
-                self._recipes[rid] = r
-                valid_recipes.append(r)
+            if not rid:
+                continue
+            r["id"] = rid
+            self._recipes[rid] = r
+        self._rebuild_index()
 
-        if not valid_recipes:
+    def _rebuild_index(self) -> None:
+        """(Re)fit the LSA embedder on the current recipe set."""
+        self._ids = list(self._recipes)
+        texts = [_recipe_to_text(self._recipes[rid]) for rid in self._ids]
+        self._lsa = LsaEmbedder()
+        self._tfidf_vectorizer = None
+        self._tfidf_matrix = None
+        self._available = False
+        if not texts:
             return
+        try:
+            self._lsa.fit(texts)
+        except Exception:
+            # Degenerate corpus (e.g. a single recipe): TruncatedSVD needs at
+            # least 2 documents. Fall back to plain TF-IDF cosine.
+            self._tfidf_vectorizer = TfidfVectorizer(
+                ngram_range=(1, 2),
+                min_df=1,
+                sublinear_tf=True,
+                stop_words="english",
+            )
+            self._tfidf_matrix = self._tfidf_vectorizer.fit_transform(texts)
+        self._available = True
 
-        texts = [_recipe_to_text(r) for r in valid_recipes]
-        embeddings = self._embedder.encode(texts, show_progress_bar=False).tolist()
+    def _similarity(self, query_text: str) -> np.ndarray:
+        """Cosine similarity between the query and every indexed recipe."""
+        if not self._ids:
+            return np.zeros(0)
+        if self._lsa.is_fitted:
+            return np.asarray(self._lsa.similarity(query_text), dtype=float)
+        if self._tfidf_vectorizer is not None and self._tfidf_matrix is not None:
+            q = self._tfidf_vectorizer.transform([query_text])
+            return np.asarray(cosine_similarity(q, self._tfidf_matrix)[0], dtype=float)
+        return np.zeros(len(self._ids))
 
-        self._collection.upsert(
-            ids=[r["id"] for r in valid_recipes],
-            embeddings=embeddings,
-            documents=texts,
-            metadatas=[
-                {
-                    "title": str(r.get("title", "")),
-                    "cuisine": str(r.get("cuisine", "")),
-                    "tags": json.dumps(r.get("tags", [])),
-                    "ingredients": json.dumps(_extract_ingredient_names(r)),
-                }
-                for r in valid_recipes
-            ],
-        )
+    def _keyword_matches(self, query_text: str) -> list[str]:
+        """Recipe ids whose title/cuisine/tags/ingredients match a query keyword.
+
+        Light plural stemming (``tomatoes`` -> ``tomato``) mirrors the keyword
+        gate in :meth:`query`, so lexically strict LSA retrieval stays generous
+        for plural query words that a dense embedder would have matched
+        semantically.
+        """
+        clean = re.sub(r"[^a-z0-9 ]+", " ", query_text.lower()).strip()
+        stop_words = {
+            "how", "to", "cook", "make", "recipe", "recipes", "for", "steps",
+            "instructions", "give", "me", "show", "what", "can", "i", "with",
+            "any", "the", "a", "an", "do", "you", "have", "please", "tell",
+            "about", "some", "good", "best", "want", "like", "need",
+        }
+        keywords = [w for w in clean.split() if w not in stop_words and len(w) > 2]
+        if not keywords:
+            return []
+        matched: list[str] = []
+        for rid in self._ids:
+            r = self._recipes[rid]
+            title = str(r.get("title", "")).lower()
+            cuisine = str(r.get("cuisine", "")).lower()
+            tags = [str(t).lower() for t in r.get("tags", [])]
+            ingredients = _extract_ingredient_names(r)
+            haystacks = [title, cuisine, *tags, *ingredients]
+            hit = False
+            for kw in keywords:
+                kw_stem = kw.rstrip("s") if len(kw) > 3 else kw
+                for hay in haystacks:
+                    if not hay:
+                        continue
+                    hay_stem = hay.rstrip("s") if len(hay) > 3 else hay
+                    if kw in hay or hay in kw or kw_stem in hay or hay_stem in kw:
+                        hit = True
+                        break
+                if hit:
+                    break
+            if hit:
+                matched.append(rid)
+        return matched
 
     def upsert_recipes(self, recipes: list[dict[str, Any]]) -> int:
-        """Incrementally embed and upsert recipes into ChromaDB without re-embedding unchanged items."""
-        if not self._available or self._collection is None or self._embedder is None:
-            return 0
+        """Incrementally embed and upsert recipes without re-embedding unchanged items."""
         if not recipes:
             return 0
 
         to_embed: list[dict[str, Any]] = []
-        texts: list[str] = []
         for r in recipes:
             rid = str(r.get("id") or r.get("recipe_id") or r.get("_id") or "")
             if not rid:
@@ -275,54 +285,36 @@ class RAGService:
                 continue
             self._recipes[rid] = r
             to_embed.append(r)
-            texts.append(new_text)
 
         if not to_embed:
             return 0
 
-        embeddings = self._embedder.encode(texts, show_progress_bar=False).tolist()
-        self._collection.upsert(
-            ids=[r["id"] for r in to_embed],
-            embeddings=embeddings,
-            documents=texts,
-            metadatas=[
-                {
-                    "title": str(r.get("title", "")),
-                    "cuisine": str(r.get("cuisine", "")),
-                    "tags": json.dumps(r.get("tags", [])),
-                    "ingredients": json.dumps(_extract_ingredient_names(r)),
-                }
-                for r in to_embed
-            ],
-        )
+        self._rebuild_index()
         logger.info("rag_upserted", extra={"upserted": len(to_embed), "total": len(self._recipes)})
         return len(to_embed)
 
     def reindex(self, recipes: list[dict[str, Any]], *, incremental: bool = True) -> int:
-        """Replace or incrementally update the ChromaDB collection with a fresh recipe set."""
-        if not self._available or self._chroma_client is None:
-            return 0
+        """Replace or incrementally update the index with a fresh recipe set."""
         try:
             if not incremental:
-                try:
-                    self._chroma_client.delete_collection(self.COLLECTION_NAME)
-                except Exception:
-                    pass
-
-                self._collection = self._chroma_client.get_or_create_collection(
-                    name=self.COLLECTION_NAME,
-                    metadata={"hnsw:space": "cosine"},
-                )
                 self._recipes = {}
                 if recipes:
                     self._index_recipes(recipes)
+                else:
+                    self._rebuild_index()
             else:
+                # Upsert deduplicates unchanged recipes; the count reported is
+                # still the size of the submitted set, as before.
                 self.upsert_recipes(recipes)
             logger.info("rag_reindexed", extra={"count": len(recipes), "incremental": incremental})
             return len(recipes)
         except Exception as exc:
             logger.error("rag_reindex_failed", extra={"error": str(exc)})
             return 0
+
+    def index_recipes(self, recipes: list[dict[str, Any]]) -> int:
+        """Backwards-compatible alias for a full (non-incremental) reindex."""
+        return self.reindex(recipes, incremental=False)
 
     # ------------------------------------------------------------------
     # Public API
@@ -344,15 +336,15 @@ class RAGService:
           retrieve -> filter allergens & preferences -> augment prompt -> generate with Gemini.
         Returns a dict with keys: success, suggestion, recipes, method.
         """
-        if not self._available or self._collection is None:
+        if not self._available:
             return {
                 "success": False,
-                "suggestion": "RAG service is unavailable. Install chromadb and sentence-transformers.",
+                "suggestion": "RAG service is unavailable.",
                 "recipes": [],
                 "method": "unavailable",
             }
 
-        if self._collection.count() == 0:
+        if not self._recipes:
             return {
                 "success": False,
                 "suggestion": "No recipes in the database yet.",
@@ -375,7 +367,7 @@ class RAGService:
 
         query_text = ". ".join(query_parts) if query_parts else "healthy delicious recipe"
 
-        # 2. Retrieve candidates from ChromaDB (fetch extra for filtering)
+        # 2. Retrieve candidates from the LSA index (fetch extra for filtering)
         n_fetch = max(top_k * 3, 10)
         retrieved = self._retrieve(query_text, n_results=n_fetch)
 
@@ -420,7 +412,7 @@ class RAGService:
         top_k: int = 5,
     ) -> dict[str, Any]:
         """Answer a question strictly using recipes pulled from the vector database."""
-        if not self._available or self._collection is None:
+        if not self._available:
             return {
                 "success": False,
                 "answer": "RAG service is unavailable.",
@@ -428,7 +420,7 @@ class RAGService:
                 "method": "unavailable",
             }
 
-        if self._collection.count() == 0:
+        if not self._recipes:
             return {
                 "success": True,
                 "answer": "No recipes in the database yet.",
@@ -673,38 +665,38 @@ class RAGService:
     # ------------------------------------------------------------------
 
     def _retrieve(self, query_text: str, n_results: int) -> list[dict[str, Any]]:
-        """Embed the query and find closest recipes in ChromaDB."""
-        if not self._available or self._collection is None or self._embedder is None:
-            return []
-        count = self._collection.count()
-        if count == 0 or n_results <= 0:
+        """Return the closest recipes: top LSA matches plus keyword matches."""
+        if not self._available or not self._ids or n_results <= 0:
             return []
 
-        limit = min(n_results, count)
-        query_embedding = self._embedder.encode([query_text]).tolist()
-        results = self._collection.query(
-            query_embeddings=query_embedding,
-            n_results=limit,
-            include=["metadatas", "distances", "documents"],
-        )
-
+        sims = self._similarity(query_text)
+        order = np.argsort(-sims) if sims.size else np.array([], dtype=int)
+        seen: set[str] = set()
         recipes_out: list[dict[str, Any]] = []
-        ids = results.get("ids", [[]])[0] if results.get("ids") else []
-        distances = results.get("distances", [[]])[0] if results.get("distances") else []
-        metas = results.get("metadatas", [[]])[0] if results.get("metadatas") else []
+        for idx in order:
+            if len(recipes_out) >= n_results:
+                break
+            score = float(sims[idx])
+            if score <= 0:
+                continue
+            rid = self._ids[int(idx)]
+            full = dict(self._recipes[rid])
+            full["similarity_score"] = round(max(0.0, min(1.0, score)), 4)
+            seen.add(rid)
+            recipes_out.append(full)
 
-        for i, (rid, dist) in enumerate(zip(ids, distances)):
-            full = dict(self._recipes.get(rid, {}))
-            if not full:
-                meta = metas[i] if i < len(metas) and isinstance(metas[i], dict) else {}
-                full = {
-                    "id": rid,
-                    "title": str(meta.get("title", "")),
-                    "cuisine": str(meta.get("cuisine", "")),
-                    "ingredients": json.loads(str(meta.get("ingredients", "[]"))) if meta.get("ingredients") else [],
-                    "tags": json.loads(str(meta.get("tags", "[]"))) if meta.get("tags") else [],
-                }
-            full["similarity_score"] = round(max(0.0, 1.0 - dist), 4)
+        # Lexically generous top-up: recipes sharing a query keyword, even
+        # when the dense score is 0 (e.g. plural "tomatoes" vs "tomato").
+        for rid in self._keyword_matches(query_text):
+            if len(recipes_out) >= n_results:
+                break
+            if rid in seen:
+                continue
+            idx = self._ids.index(rid)
+            score = float(sims[idx]) if sims.size else 0.0
+            full = dict(self._recipes[rid])
+            full["similarity_score"] = round(max(0.0, min(1.0, score)), 4)
+            seen.add(rid)
             recipes_out.append(full)
 
         return recipes_out

@@ -19,6 +19,6 @@ prometheus_client>=0.20
 # required when GEMINI_API_KEY is set and you want LLM-backed features.
 google-generativeai>=0.8
 
-# RAG dependencies
-chromadb>=0.5
-sentence-transformers>=3.0
+# RAG retrieval runs on the bundled scikit-learn LSA embedder
+# (app/embeddings.py) — no ChromaDB / sentence-transformers / PyTorch, so the
+# service stays well under Render's 512 MB free-tier limit.

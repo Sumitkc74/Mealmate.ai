@@ -293,7 +293,7 @@ def create_app() -> FastAPI:
 
         Pipeline:
           1. Embed pantry + preferences into a vector query
-          2. Retrieve semantically similar recipes from ChromaDB
+          2. Retrieve semantically similar recipes from the in-memory LSA index
           3. Hard-filter any recipe containing an allergen
           4. Pass retrieved recipes + context to Gemini for a natural suggestion
           5. Falls back to ranked results if Gemini is not configured
@@ -352,7 +352,7 @@ def create_app() -> FastAPI:
         payload: RAGIndexRequest,
         rec: Annotated[RecommenderService, Depends(get_recommender)],
     ) -> RAGIndexResponse:
-        """Re-index ChromaDB and update RecommenderService with a fresh recipe set from MongoDB."""
+        """Re-index the RAG store and update RecommenderService with a fresh recipe set from MongoDB."""
         if payload.recipes:
             try:
                 rec_recipes = [
