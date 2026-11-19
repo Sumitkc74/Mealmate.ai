@@ -8,6 +8,8 @@ import { usePageMetadata } from '@/hooks/usePageMetadata';
 
 interface LocationState {
   from?: string;
+  /** Shown when a guest was sent here after trying something that needs an account. */
+  message?: string;
 }
 
 export function LoginPage() {
@@ -24,6 +26,7 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as LocationState | null)?.from ?? '/recipes';
+  const notice = (location.state as LocationState | null)?.message ?? null;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -66,6 +69,12 @@ export function LoginPage() {
         <p className="mt-2 text-sm text-ink-soft">
           Continue planning your week with calm, AI-assisted recipes.
         </p>
+
+        {notice && (
+          <p role="status" className="mt-4 rounded-md border border-brand-200 bg-brand-50 px-3.5 py-2.5 text-sm text-brand-800">
+            {notice}
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-7 flex flex-col gap-4" noValidate>
           <Input

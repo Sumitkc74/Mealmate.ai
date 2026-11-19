@@ -120,3 +120,64 @@ describe('RecipesPage', () => {
     );
   });
 });
+
+describe('RecipesPage guest browsing', () => {
+  function renderPageAsGuest() {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    useAuthStore.setState({ token: null, user: null });
+    return render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter
+          initialEntries={['/recipes']}
+          future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+        >
+          <Routes>
+            <Route path="/recipes" element={<RecipesPage />} />
+            <Route path="/login" element={<div>Login page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+  }
+
+  it('lets guests browse recipes without signing in', async () => {
+    mockedGet.mockResolvedValueOnce({
+      data: {
+        success: true,
+        page: 1,
+        limit: 12,
+        total: 1,
+        pages: 1,
+        items: [makeRecipe('a', { title: 'Pancakes' })],
+      },
+    });
+
+    renderPageAsGuest();
+
+    expect(await screen.findByText('Pancakes')).toBeInTheDocument();
+  });
+
+  it('sends guests to sign in when they try to add a recipe', async () => {
+    mockedGet.mockResolvedValue({
+      data: { success: true, page: 1, limit: 12, total: 0, pages: 1, items: [] },
+    });
+
+    renderPageAsGuest();
+    const user = userEvent.setup();
+    const addButtons = await screen.findAllByRole('button', { name: /\+ new recipe/i });
+    await user.click(addButtons[0]!);
+
+    expect(await screen.findByText('Login page')).toBeInTheDocument();
+  });
+
+  it('hides the pantry-aware suggestions panel from guests', async () => {
+    mockedGet.mockResolvedValue({
+      data: { success: true, page: 1, limit: 12, total: 0, pages: 1, items: [] },
+    });
+
+    renderPageAsGuest();
+
+    await screen.findByRole('heading', { name: /no recipes yet/i });
+    expect(screen.queryByLabelText('Suggested for you')).not.toBeInTheDocument();
+  });
+});

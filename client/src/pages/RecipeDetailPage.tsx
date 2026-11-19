@@ -21,6 +21,7 @@ export function RecipeDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
+  const isAuthed = useAuthStore((s) => Boolean(s.token));
   const { data: recipe, isLoading, isError, error } = useRecipe(id);
 
   usePageMetadata({
@@ -146,6 +147,17 @@ export function RecipeDetailPage() {
   const total = (recipe.prepTime ?? 0) + (recipe.cookTime ?? 0);
   const showImage = Boolean(recipe.imageUrl) && imageOk;
 
+  // Guests can browse and cook along, but recording a cook needs an account.
+  function handleCookedClick() {
+    if (!isAuthed) {
+      navigate('/login', {
+        state: { from: `/recipes/${id}`, message: 'Sign in to track recipes you cook.' },
+      });
+      return;
+    }
+    setCookedModalOpen(true);
+  }
+
   async function handleDelete() {
     if (!recipe) return;
     if (!confirm(`Delete "${recipe.title}"? This cannot be undone.`)) return;
@@ -246,7 +258,7 @@ export function RecipeDetailPage() {
           <Button
             type="button"
             variant="secondary"
-            onClick={() => setCookedModalOpen(true)}
+            onClick={handleCookedClick}
             className="flex items-center gap-1.5"
           >
             <span>I Cooked This!</span>

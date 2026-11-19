@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -10,6 +10,7 @@ import { RecipeImportModal } from '@/components/recipes/RecipeImportModal';
 import { AddRecipeModal } from '@/components/recipes/AddRecipeModal';
 import { useRecipes, type ListRecipesParams } from '@/hooks/useRecipes';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useAuthStore } from '@/stores/authStore';
 import { extractErrorMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { usePageMetadata } from '@/hooks/usePageMetadata';
@@ -83,6 +84,25 @@ export function RecipesPage() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
+  // Guests can browse, but adding needs an account: send them to sign in
+  // (they come back here after logging in) instead of opening the form.
+  const isAuthed = useAuthStore((s) => Boolean(s.token));
+  const navigate = useNavigate();
+
+  function requireAuth(message: string) {
+    if (isAuthed) return true;
+    navigate('/login', { state: { from: '/recipes', message } });
+    return false;
+  }
+
+  function handleAddClick() {
+    if (requireAuth('Sign in to add a recipe.')) setIsAddModalOpen(true);
+  }
+
+  function handleImportClick() {
+    if (requireAuth('Sign in to import recipes.')) setIsImportModalOpen(true);
+  }
+
   return (
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -96,14 +116,14 @@ export function RecipesPage() {
           <Button
             type="button"
             variant="secondary"
-            onClick={() => setIsImportModalOpen(true)}
+            onClick={handleImportClick}
             className="flex items-center gap-1.5"
           >
             <span>Import CSV / Excel</span>
           </Button>
           <Button
             type="button"
-            onClick={() => setIsAddModalOpen(true)}
+            onClick={handleAddClick}
             className="flex items-center gap-1.5"
           >
             <span>+ New recipe</span>
@@ -111,9 +131,9 @@ export function RecipesPage() {
         </div>
       </header>
 
-      <SuggestedRecipes
-        onGenerateNew={() => setIsAddModalOpen(true)}
-      />
+      {isAuthed && (
+        <SuggestedRecipes onGenerateNew={handleAddClick} />
+      )}
 
       <div className="grid gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-5">
         <Input
@@ -245,7 +265,7 @@ export function RecipesPage() {
             ) : (
               <Button
                 type="button"
-                onClick={() => setIsAddModalOpen(true)}
+                onClick={handleAddClick}
               >
                 + New recipe
               </Button>

@@ -39,6 +39,12 @@ export default function App() {
           <Route path="terms" element={<TermsPage />} />
           <Route path="attributions" element={<AttributionsPage />} />
 
+          {/* Browsing is public: guests can view the recipe library and
+              recipe details. Adding, editing, and everything personal
+              (planner, pantry, grocery, nutrition) still needs an account. */}
+          <Route path="recipes" element={<RecipesPage />} />
+          <Route path="recipes/:id" element={<RecipeDetailPage />} />
+
           <Route element={<PublicOnlyRoute />}>
             <Route path="login" element={<LoginPage />} />
             <Route path="register" element={<RegisterPage />} />
@@ -46,9 +52,7 @@ export default function App() {
 
           <Route element={<ProtectedRoute />}>
             <Route path="privacy/manage" element={<ProfilePrivacyPage />} />
-            <Route path="recipes" element={<RecipesPage />} />
             <Route path="recipes/new" element={<RecipeFormPage mode="create" />} />
-            <Route path="recipes/:id" element={<RecipeDetailPage />} />
             <Route path="recipes/:id/edit" element={<RecipeFormPage mode="edit" />} />
             <Route path="planner" element={<PlannerPage />} />
             <Route path="pantry" element={<PantryPage />} />

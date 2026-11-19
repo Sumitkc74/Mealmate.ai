@@ -4,8 +4,9 @@ import { useAuthStore } from '@/stores/authStore';
 import { useLogout } from '@/hooks/useAuth';
 import { cn } from '@/lib/cn';
 
+const publicLinks = [{ to: '/recipes', label: 'Recipes' }];
+
 const links = [
-  { to: '/recipes', label: 'Recipes' },
   { to: '/planner', label: 'Planner' },
   { to: '/grocery', label: 'Grocery' },
   { to: '/nutrition', label: 'Nutrition' },
@@ -83,28 +84,26 @@ export function Navbar() {
           </Link>
         </div>
 
-        {/* Desktop Navigation Links */}
-        {isAuthed && (
-          <ul className="hidden items-center gap-0.5 md:flex">
-            {links.map((l) => (
-              <li key={l.to}>
-                <NavLink
-                  to={l.to}
-                  className={({ isActive }) =>
-                    cn(
-                      'rounded-full px-3.5 py-2 text-sm font-medium transition-colors min-h-[44px] inline-flex items-center',
-                      isActive
-                        ? 'bg-brand-50 text-brand-800'
-                        : 'text-ink-soft hover:bg-canvas-soft hover:text-ink'
-                    )
-                  }
-                >
-                  {l.label}
-                </NavLink>
-              </li>
-            ))}
-          </ul>
-        )}
+        {/* Desktop Navigation Links — Recipes is public, the rest need an account */}
+        <ul className="hidden items-center gap-0.5 md:flex">
+          {[...publicLinks, ...(isAuthed ? links : [])].map((l) => (
+            <li key={l.to}>
+              <NavLink
+                to={l.to}
+                className={({ isActive }) =>
+                  cn(
+                    'rounded-full px-3.5 py-2 text-sm font-medium transition-colors min-h-[44px] inline-flex items-center',
+                    isActive
+                      ? 'bg-brand-50 text-brand-800'
+                      : 'text-ink-soft hover:bg-canvas-soft hover:text-ink'
+                  )
+                }
+              >
+                {l.label}
+              </NavLink>
+            </li>
+          ))}
+        </ul>
 
         {/* Desktop Auth Controls */}
         <div className="flex items-center gap-2">
@@ -182,6 +181,26 @@ export function Navbar() {
             </div>
           ) : (
             <div className="flex flex-col gap-2 pt-1">
+              <ul className="flex flex-col gap-1">
+                {publicLinks.map((l) => (
+                  <li key={l.to}>
+                    <NavLink
+                      to={l.to}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={({ isActive }) =>
+                        cn(
+                          'flex min-h-[44px] w-full items-center rounded-md px-3.5 py-2 text-sm font-medium transition-colors',
+                          isActive
+                            ? 'bg-brand-50 text-brand-800 font-semibold'
+                            : 'text-ink-soft hover:bg-canvas-soft hover:text-ink'
+                        )
+                      }
+                    >
+                      {l.label}
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
               <Link
                 to="/login"
                 onClick={() => setMobileMenuOpen(false)}
