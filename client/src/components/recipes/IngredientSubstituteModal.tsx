@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import axios from 'axios';
 import { api } from '@/lib/api';
 
 interface SubstitutionItem {
@@ -41,13 +42,25 @@ export function IngredientSubstituteModal({ isOpen, onClose, initialIngredient =
     setLoading(true);
     setError(null);
     try {
+      // 30s so the call can outlast a sleeping free-tier AI service waking up.
       const res = await api.get<SubstitutesResponse>('/ai/knowledge/substitutes', {
         params: { ingredient: clean },
+        timeout: 30_000,
       });
       setSubstitutions(res.data.substitutions || []);
       setSearchedIngredient(clean);
-    } catch {
-      setError(`No verified substitutions found for "${clean}". Try common ingredients like buttermilk, egg, butter, or soy sauce.`);
+    } catch (err) {
+      // A failed request (timeout, network error, or 5xx) means the AI
+      // service is unreachable — usually still waking from sleep — not that
+      // the ingredient has no substitutions. Only a 4xx means the lookup
+      // itself was rejected.
+      const unreachable =
+        !axios.isAxiosError(err) || !err.response || err.response.status >= 500;
+      setError(
+        unreachable
+          ? 'The AI service is waking up or unavailable right now — please try again in a moment.'
+          : `No verified substitutions found for "${clean}". Try common ingredients like buttermilk, egg, butter, or soy sauce.`
+      );
       setSubstitutions([]);
     } finally {
       setLoading(false);

@@ -319,6 +319,10 @@ export function PlannerPage() {
                         Generate my week
                       </Button>
                     </div>
+                  ) : aiStatus.loading ? (
+                    <p className="text-xs text-ink-soft rounded bg-canvas-soft border border-line px-3 py-1.5">
+                      Waking up the AI service — this can take a moment after idle.
+                    </p>
                   ) : (
                     <p className="text-xs text-amber-700 rounded bg-amber-50 border border-amber-200 px-3 py-1.5">
                       AI planner offline — click any slot to assign recipes manually.

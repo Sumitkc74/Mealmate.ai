@@ -10,7 +10,9 @@ function getClient(): AxiosInstance {
   if (!client) {
     client = axios.create({
       baseURL: env.AI_SERVICE_URL,
-      timeout: 8000,
+      // Free-tier AI service sleeps when idle and needs 30-60s to wake; a
+      // short timeout turns every first call of a session into a failure.
+      timeout: 30000,
       headers: { 'Content-Type': 'application/json' },
     });
   }
@@ -329,7 +331,9 @@ export interface AiCapabilities {
 export async function getCapabilities(): Promise<AiCapabilities> {
   try {
     const { data } = await getClient().get<AiCapabilities>('/capabilities', {
-      timeout: 4000,
+      // Same cold-start allowance as the rest of the AI client: the probe
+      // must outlast a sleeping free-tier service waking up.
+      timeout: 30000,
     });
     return data;
   } catch (err) {

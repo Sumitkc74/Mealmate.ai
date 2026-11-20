@@ -321,10 +321,17 @@ export interface AiCapabilities {
 export function useAiCapabilities() {
   return useQuery({
     queryKey: ['ai', 'capabilities'],
-    staleTime: 5 * 60_000,
-    retry: false,
+    // A failed probe (usually a sleeping free-tier service) must not stick
+    // for five minutes: re-check after a minute, and retry the waking
+    // service instead of giving up on the first timeout.
+    staleTime: 60_000,
+    retry: 2,
     queryFn: async (): Promise<AiCapabilities> => {
-      const { data } = await api.get<AiCapabilities>('/ai/capabilities');
+      // 35s so the call can outlast the server-side 30s capabilities probe
+      // plus a cold-starting AI service.
+      const { data } = await api.get<AiCapabilities>('/ai/capabilities', {
+        timeout: 35_000,
+      });
       return data;
     },
   });
