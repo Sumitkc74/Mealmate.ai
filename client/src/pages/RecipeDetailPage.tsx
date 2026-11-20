@@ -158,6 +158,18 @@ export function RecipeDetailPage() {
     setCookedModalOpen(true);
   }
 
+  // Ingredient swaps call a signed-in-only AI endpoint, so guests go to login first.
+  function handleSwapsClick(ingredientName: string) {
+    if (!isAuthed) {
+      navigate('/login', {
+        state: { from: `/recipes/${id}`, message: 'Sign in to see ingredient swaps.' },
+      });
+      return;
+    }
+    setSelectedIng(ingredientName);
+    setSubModalOpen(true);
+  }
+
   async function handleDelete() {
     if (!recipe) return;
     if (!confirm(`Delete "${recipe.title}"? This cannot be undone.`)) return;
@@ -441,10 +453,7 @@ export function RecipeDetailPage() {
           <div className="mt-2 flex justify-end">
             <button
               type="button"
-              onClick={() => {
-                setSelectedIng('');
-                setSubModalOpen(true);
-              }}
+              onClick={() => handleSwapsClick('')}
               className="text-xs font-semibold text-terracotta hover:underline"
             >
               Ingredient Swaps
@@ -461,10 +470,7 @@ export function RecipeDetailPage() {
                   <span className="text-text">{ing.name}</span>
                   <button
                     type="button"
-                    onClick={() => {
-                      setSelectedIng(ing.name);
-                      setSubModalOpen(true);
-                    }}
+                    onClick={() => handleSwapsClick(ing.name)}
                     title={`Find substitutions for ${ing.name}`}
                     className="text-[11px] text-text-muted hover:text-terracotta hover:underline font-mono"
                   >

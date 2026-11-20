@@ -219,3 +219,48 @@ describe('RecipeDetailPage Enhancements', () => {
   });
 });
 
+describe('RecipeDetailPage guest browsing', () => {
+  function renderPageAsGuest() {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    useAuthStore.setState({ token: null, user: null });
+    return render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/recipes/r1']}>
+          <Routes>
+            <Route path="/recipes/:id" element={<RecipeDetailPage />} />
+            <Route path="/login" element={<div>Login page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+  }
+
+  beforeEach(() => {
+    mockedGet.mockReset();
+    mockedPatch.mockReset();
+    mockedGet.mockResolvedValue({ data: { recipe: mockRecipe } });
+  });
+
+  it('sends guests to sign in when they try an ingredient swap', async () => {
+    renderPageAsGuest();
+    const user = userEvent.setup();
+    const swapButtons = await screen.findAllByRole('button', { name: /swap\?/i });
+    await user.click(swapButtons[0]!);
+
+    expect(await screen.findByText('Login page')).toBeInTheDocument();
+    expect(mockedGet).not.toHaveBeenCalledWith(
+      expect.stringContaining('/ai/knowledge/substitutes'),
+      expect.anything()
+    );
+  });
+
+  it('sends guests to sign in from the Ingredient Swaps button', async () => {
+    renderPageAsGuest();
+    const user = userEvent.setup();
+    const swapsButton = await screen.findByRole('button', { name: /ingredient swaps/i });
+    await user.click(swapsButton);
+
+    expect(await screen.findByText('Login page')).toBeInTheDocument();
+  });
+});
+
