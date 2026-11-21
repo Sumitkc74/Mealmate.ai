@@ -234,28 +234,9 @@ export function HomePage() {
       </section>
 
       {/* ──────── Suggested for you Section ──────── */}
+      {/* Public: guests see popular recipes; signing in adds pantry-aware matching. */}
       <section className="border-t border-line pt-10">
-        {isAuthed ? (
-          <SuggestedRecipes />
-        ) : (
-          <div className="rounded-lg border border-line bg-card p-8 text-center">
-            <h2 className="font-serif text-2xl font-semibold text-text">
-              Suggested for you
-            </h2>
-            <p className="mt-2 text-sm text-text-muted max-w-md mx-auto">
-              Connect your account to access pantry-aware dish recommendations,
-              allergy-filtered substitutions, and custom meal generation.
-            </p>
-            <div className="mt-5">
-              <Link
-                to="/login"
-                className="inline-flex items-center rounded-md bg-terracotta px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-terracotta-dark"
-              >
-                Sign in to view suggestions
-              </Link>
-            </div>
-          </div>
-        )}
+        <SuggestedRecipes />
       </section>
 
       {/* ──────── Asymmetric Architecture Overview (replaces 3 generic cards) ──────── */}

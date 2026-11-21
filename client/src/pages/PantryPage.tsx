@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { useUpdateProfile } from '@/hooks/useProfile';
 import { extractErrorMessage } from '@/lib/api';
@@ -20,11 +21,17 @@ export function PantryPage() {
   });
 
   const user = useAuthStore((s) => s.user);
+  const isAuthed = Boolean(user);
+  const navigate = useNavigate();
   const update = useUpdateProfile();
   const [error, setError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
 
-  if (!user) return null;
+  // Guests browse with empty data; every write redirects to sign-in.
+  const pantry = user?.pantry ?? [];
+  const dietaryPreferences = user?.dietaryPreferences ?? [];
+  const allergies = user?.allergies ?? [];
+  const cookingHistory = user?.cookingHistory ?? [];
 
   function flashSaved() {
     setSavedFlash(true);
@@ -32,7 +39,10 @@ export function PantryPage() {
   }
 
   async function handleAddPantryItem(item: PantryItem) {
-    if (!user) return;
+    if (!user) {
+      navigate('/login', { state: { from: '/pantry', message: 'Sign in to add pantry items.' } });
+      return;
+    }
     setError(null);
     const next = [...user.pantry, item];
     try {
@@ -44,7 +54,10 @@ export function PantryPage() {
   }
 
   async function handleRemovePantryItem(idx: number) {
-    if (!user) return;
+    if (!user) {
+      navigate('/login', { state: { from: '/pantry', message: 'Sign in to manage your pantry.' } });
+      return;
+    }
     setError(null);
     const next = user.pantry.filter((_, i) => i !== idx);
     try {
@@ -56,7 +69,10 @@ export function PantryPage() {
   }
 
   async function handleClearAllPantry() {
-    if (!user) return;
+    if (!user) {
+      navigate('/login', { state: { from: '/pantry', message: 'Sign in to manage your pantry.' } });
+      return;
+    }
     setError(null);
     try {
       await update.mutateAsync({ pantry: [] });
@@ -67,7 +83,10 @@ export function PantryPage() {
   }
 
   async function handleAddTag(field: 'dietaryPreferences' | 'allergies', value: string) {
-    if (!user) return;
+    if (!user) {
+      navigate('/login', { state: { from: '/pantry', message: 'Sign in to save your preferences.' } });
+      return;
+    }
     setError(null);
     const cleaned = value.trim().toLowerCase();
     if (!cleaned) return;
@@ -82,7 +101,10 @@ export function PantryPage() {
   }
 
   async function handleRemoveTag(field: 'dietaryPreferences' | 'allergies', value: string) {
-    if (!user) return;
+    if (!user) {
+      navigate('/login', { state: { from: '/pantry', message: 'Sign in to save your preferences.' } });
+      return;
+    }
     setError(null);
     const cleaned = value.trim().toLowerCase();
     const current = user[field] ?? [];
@@ -96,7 +118,10 @@ export function PantryPage() {
   }
 
   async function handleToggleTag(field: 'dietaryPreferences' | 'allergies', value: string) {
-    if (!user) return;
+    if (!user) {
+      navigate('/login', { state: { from: '/pantry', message: 'Sign in to save your preferences.' } });
+      return;
+    }
     setError(null);
     const cleaned = value.trim().toLowerCase();
     if (!cleaned) return;
@@ -131,6 +156,16 @@ export function PantryPage() {
         )}
       </header>
 
+      {!isAuthed && (
+        <div className="rounded-md border border-line bg-card px-4 py-3 text-sm text-ink-soft">
+          You&apos;re browsing as a guest — this is what the pantry looks like.{' '}
+          <Link to="/login" className="font-medium text-brand-700 hover:underline">
+            Sign in
+          </Link>{' '}
+          to track your items, preferences, and cooking history.
+        </div>
+      )}
+
       {/* ─── Informational Benefit Note (Calm & Minimal) ─── */}
       <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-line bg-card px-4 py-2.5 text-xs text-text-muted">
         <div>
@@ -147,26 +182,36 @@ export function PantryPage() {
       )}
 
       {/* ─── Smart Ingestion: AI Paste & Vision Photo Uploader ─── */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <SmartPantryPaste
-          existing={user.pantry}
-          onAdd={async (next) => {
-            await update.mutateAsync({ pantry: next });
-            flashSaved();
-          }}
-        />
-        <FridgePhotoUploader
-          existing={user.pantry}
-          onAdd={async (next) => {
-            await update.mutateAsync({ pantry: next });
-            flashSaved();
-          }}
-        />
-      </div>
+      {isAuthed ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <SmartPantryPaste
+            existing={pantry}
+            onAdd={async (next) => {
+              await update.mutateAsync({ pantry: next });
+              flashSaved();
+            }}
+          />
+          <FridgePhotoUploader
+            existing={pantry}
+            onAdd={async (next) => {
+              await update.mutateAsync({ pantry: next });
+              flashSaved();
+            }}
+          />
+        </div>
+      ) : (
+        <div className="rounded border border-line bg-card px-4 py-3 text-sm text-text-muted">
+          Smart import and photo capture need an account —{' '}
+          <Link to="/login" className="font-medium text-brand-700 hover:underline">
+            sign in
+          </Link>{' '}
+          to add pantry items from text or a photo.
+        </div>
+      )}
 
       {/* ─── Zero-Waste Chef Expiry Alert ─── */}
       {(() => {
-        const expiringSoon = user.pantry.filter((p) => {
+        const expiringSoon = pantry.filter((p) => {
           if (!p.expiresAt) return false;
           const daysLeft = (new Date(p.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
           return daysLeft <= 3 && daysLeft >= 0;
@@ -189,7 +234,7 @@ export function PantryPage() {
 
       {/* ─── Redesigned "In Your Pantry" Section ─── */}
       <PantryInventorySection
-        items={user.pantry}
+        items={pantry}
         onAdd={handleAddPantryItem}
         onRemove={handleRemovePantryItem}
         onClearAll={handleClearAllPantry}
@@ -197,19 +242,29 @@ export function PantryPage() {
       />
 
       {/* ─── RAG Recipe Suggester ("What can I make with my pantry?") ─── */}
-      <RagRecipeSuggester
-        pantry={user.pantry}
-        dietaryPreferences={user.dietaryPreferences ?? []}
-        allergies={user.allergies ?? []}
-      />
+      {isAuthed ? (
+        <RagRecipeSuggester
+          pantry={pantry}
+          dietaryPreferences={dietaryPreferences}
+          allergies={allergies}
+        />
+      ) : (
+        <div className="rounded border border-line bg-card px-4 py-3 text-sm text-text-muted">
+          AI recipe suggestions need an account —{' '}
+          <Link to="/login" className="font-medium text-brand-700 hover:underline">
+            sign in
+          </Link>{' '}
+          to see what you can make with your pantry.
+        </div>
+      )}
 
       {/* ─── Cooking History & Notes Log ─── */}
-      <CookingHistorySection history={user.cookingHistory ?? []} />
+      <CookingHistorySection history={cookingHistory} />
 
       {/* ─── Redesigned Dietary Preferences & Allergies Grid ─── */}
       <div className="grid gap-6 lg:grid-cols-2">
         <DietaryPreferencesSection
-          preferences={user.dietaryPreferences ?? []}
+          preferences={dietaryPreferences}
           onToggle={(val) => handleToggleTag('dietaryPreferences', val)}
           onAdd={(val) => handleAddTag('dietaryPreferences', val)}
           onRemove={(val) => handleRemoveTag('dietaryPreferences', val)}
@@ -217,7 +272,7 @@ export function PantryPage() {
         />
 
         <AllergiesSection
-          allergies={user.allergies ?? []}
+          allergies={allergies}
           onToggle={(val) => handleToggleTag('allergies', val)}
           onAdd={(val) => handleAddTag('allergies', val)}
           onRemove={(val) => handleRemoveTag('allergies', val)}

@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import { useMealPlans } from '@/hooks/useMealPlans';
 import { useWeeklyNutrition } from '@/hooks/useNutrition';
+import { useAuthStore } from '@/stores/authStore';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Link } from 'react-router-dom';
@@ -25,7 +26,8 @@ export function NutritionPage() {
       'Analyze weekly calorie, protein, carbohydrate, and fat breakdowns calculated directly from your scheduled meal plans with MealMate nutrition analytics.',
   });
 
-  const { data: plans, isLoading: loadingPlans } = useMealPlans();
+  const isAuthed = useAuthStore((s) => Boolean(s.token));
+  const { data: plans, isLoading: loadingPlans } = useMealPlans(isAuthed);
   const [planId, setPlanId] = useState<string>('');
 
   // Default to the most recent plan when plans first load.

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuthStore } from '@/stores/authStore';
 import { useGroceryLists } from '@/hooks/useGrocery';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -14,7 +15,8 @@ export function GroceryPage() {
       'Manage consolidated weekly shopping lists organized by supermarket aisle, pre-subtracted against ingredients already in stock in your pantry.',
   });
 
-  const { data, isLoading } = useGroceryLists();
+  const isAuthed = useAuthStore((s) => Boolean(s.token));
+  const { data, isLoading } = useGroceryLists(isAuthed);
   const [listSort, setListSort] = useState<GroceryListSortOption>('newest');
 
   const sortedLists = useMemo(() => {

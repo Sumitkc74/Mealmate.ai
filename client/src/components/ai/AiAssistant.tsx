@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
@@ -47,6 +48,7 @@ export function AiAssistant() {
   const [subLoading, setSubLoading] = useState(false);
   const [subError, setSubError] = useState<string | null>(null);
   const token = useAuthStore((s) => s.token);
+  const isAuthed = Boolean(token);
 
   async function searchSubstitutes(ing: string) {
     const clean = ing.trim();
@@ -55,7 +57,7 @@ export function AiAssistant() {
     setSubError(null);
     try {
       const res = await fetch(`/api/ai/knowledge/substitutes?ingredient=${encodeURIComponent(clean)}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
       });
       if (!res.ok) throw new Error(`Request failed: ${res.status}`);
       const data = await res.json();
@@ -82,7 +84,7 @@ export function AiAssistant() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ question: trimmed, top_k: 5 }),
       });
@@ -307,6 +309,9 @@ export function AiAssistant() {
             )}
 
             {tab === 'assistant' ? (
+              !isAuthed ? (
+                <GuestChatNotice />
+              ) : (
               <>
                 <div
                   ref={scrollRef}
@@ -412,7 +417,11 @@ export function AiAssistant() {
                   </button>
                 </form>
               </>
+              )
             ) : tab === 'recipe-qa' ? (
+              !isAuthed ? (
+                <GuestChatNotice />
+              ) : (
               <>
                 {/* Recipe Q&A tab */}
                 <div
@@ -502,6 +511,7 @@ export function AiAssistant() {
                   </button>
                 </form>
               </>
+              )
             ) : (
               <>
                 {/* Knowledge Graph Substitutes tab */}
@@ -594,6 +604,32 @@ export function AiAssistant() {
         )}
       </AnimatePresence>
     </>
+  );
+}
+
+/** Shown to guests instead of the chat and Q&A tabs: AI chat needs an account. */
+function GuestChatNotice() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  return (
+    <div className="flex max-h-[55vh] min-h-[260px] flex-1 flex-col items-center justify-center gap-3 overflow-y-auto bg-gray-50 p-4 text-center">
+      <p className="text-sm font-semibold text-gray-800">AI chat needs an account</p>
+      <p className="max-w-[260px] text-xs leading-relaxed text-gray-600">
+        Sign in to chat with the assistant, ask recipe questions, and let it update your plan.
+        Ingredient swaps are open to everyone — see the Swaps tab.
+      </p>
+      <button
+        type="button"
+        onClick={() =>
+          navigate('/login', {
+            state: { from: location.pathname, message: 'Sign in to use the AI chat.' },
+          })
+        }
+        className="rounded-full bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-700"
+      >
+        Sign in
+      </button>
+    </div>
   );
 }
 

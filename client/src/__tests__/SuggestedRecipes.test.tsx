@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SuggestedRecipes } from '@/components/recipes/SuggestedRecipes';
 import { HomePage } from '@/pages/HomePage';
@@ -146,17 +146,75 @@ describe('SuggestedRecipes & HomePage suggestions flow', () => {
     expect(screen.getByRole('button', { name: /generate with ai/i })).toBeInTheDocument();
   });
 
-  it('renders preview on HomePage when user is logged out, and full suggestions when logged in', async () => {
-    // 1. Logged out state
+  it('shows real suggestions on HomePage when user is logged out', async () => {
+    // Guests see popular recipes, not a sign-in wall.
     useAuthStore.setState({ token: null, user: null });
-    const { unmount } = renderWithClient(<HomePage />);
+    mockedPost.mockResolvedValueOnce({
+      data: {
+        success: true,
+        count: 1,
+        strategy: 'starter',
+        results: [
+          {
+            recipe_id: 'herb-garlic-bread',
+            title: 'Herb Garlic Bread',
+            score: 0.85,
+            matched_ingredients: [],
+            reason: 'Popular recipe from your database',
+          },
+        ],
+      },
+    });
 
-    expect(await screen.findByRole('heading', { level: 2, name: /suggested for you/i })).toBeInTheDocument();
-    expect(screen.getByText(/sign in to view suggestions/i)).toBeInTheDocument();
+    renderWithClient(<HomePage />);
 
-    unmount();
+    expect(await screen.findByText('Herb Garlic Bread')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /suggested for you/i })).toBeInTheDocument();
+    expect(screen.queryByText(/sign in to view suggestions/i)).not.toBeInTheDocument();
+  });
 
-    // 2. Logged in state
+  it('sends guests to sign in when they try to generate recipes with AI', async () => {
+    useAuthStore.setState({ token: null, user: null });
+    mockedPost.mockResolvedValueOnce({
+      data: {
+        success: true,
+        count: 1,
+        strategy: 'starter',
+        results: [
+          {
+            recipe_id: 'herb-garlic-bread',
+            title: 'Herb Garlic Bread',
+            score: 0.85,
+            matched_ingredients: [],
+            reason: 'Popular recipe from your database',
+          },
+        ],
+      },
+    });
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter
+          initialEntries={['/']}
+          future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+        >
+          <Routes>
+            <Route path="/" element={<SuggestedRecipes />} />
+            <Route path="/login" element={<div>Login page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+    const user = userEvent.setup();
+
+    const suggestAiBtn = await screen.findByRole('button', { name: /suggest new recipes with ai/i });
+    await user.click(suggestAiBtn);
+
+    expect(await screen.findByText('Login page')).toBeInTheDocument();
+  });
+
+  it('shows full suggestions on HomePage when user is logged in', async () => {
     useAuthStore.setState({
       token: 'active-token',
       user: {

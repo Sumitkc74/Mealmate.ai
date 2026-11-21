@@ -27,6 +27,25 @@ export function protect(req: Request, _res: Response, next: NextFunction) {
   }
 }
 
+/**
+ * Attach the user when a valid JWT is present, but never reject the request.
+ * Public read-only endpoints use this so guests can browse while signed-in
+ * users still get their personal context (pantry, preferences, allergies).
+ * An absent or invalid token simply means the caller is a guest.
+ */
+export function optionalProtect(req: Request, _res: Response, next: NextFunction) {
+  const header = req.headers.authorization;
+  if (!header?.startsWith('Bearer ')) return next();
+  const token = header.slice(7).trim();
+  if (!token) return next();
+  try {
+    req.user = verifyAccessToken(token);
+  } catch {
+    // Invalid or expired token: treat the caller as a guest.
+  }
+  next();
+}
+
 /** Restrict to specific roles (use after `protect`). */
 export function requireRole(...roles: Array<'user' | 'admin'>) {
   return (req: Request, _res: Response, next: NextFunction) => {

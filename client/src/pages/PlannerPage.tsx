@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuthStore } from '@/stores/authStore';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -62,11 +63,12 @@ export function PlannerPage() {
   });
 
   const navigate = useNavigate();
+  const isAuthed = useAuthStore((s) => Boolean(s.token));
   const [weekStart, setWeekStart] = useState<Date>(() => startOfWeekMondayUTC());
   const [picker, setPicker] = useState<{ day: DayName; slot: Slot } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const { data: plans, isLoading: loadingPlans } = useMealPlans();
+  const { data: plans, isLoading: loadingPlans } = useMealPlans(isAuthed);
   const weekIso = toIsoDate(weekStart);
 
   const planForWeek = useMemo<MealPlan | undefined>(() => {
@@ -98,6 +100,12 @@ export function PlannerPage() {
   }
 
   async function handleAssign(day: DayName, slot: Slot, recipeId: string | null) {
+    if (!isAuthed) {
+      navigate('/login', {
+        state: { from: '/planner', message: 'Sign in to add recipes to your plan.' },
+      });
+      return;
+    }
     setError(null);
     try {
       const target = await ensurePlan();
@@ -108,6 +116,12 @@ export function PlannerPage() {
   }
 
   async function handleGenerateGrocery() {
+    if (!isAuthed) {
+      navigate('/login', {
+        state: { from: '/planner', message: 'Sign in to generate a grocery list.' },
+      });
+      return;
+    }
     if (!plan) return;
     setError(null);
     try {
@@ -123,6 +137,12 @@ export function PlannerPage() {
    * Mongo (no `_id`) are skipped — the user can drag those in manually.
    */
   async function handleAiGenerate() {
+    if (!isAuthed) {
+      navigate('/login', {
+        state: { from: '/planner', message: 'Sign in to generate your week with AI.' },
+      });
+      return;
+    }
     setError(null);
     setAiNote(null);
     try {
@@ -202,6 +222,16 @@ export function PlannerPage() {
             </Button>
           </div>
         </header>
+
+        {!isAuthed && (
+          <div className="rounded-md border border-line bg-card px-4 py-3 text-sm text-ink-soft">
+            You&apos;re browsing as a guest — the planner is yours to explore.{' '}
+            <Link to="/login" className="font-medium text-brand-700 hover:underline">
+              Sign in
+            </Link>{' '}
+            to save plans, assign recipes, and generate grocery lists.
+          </div>
+        )}
 
         {error && (
           <div role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -307,7 +337,7 @@ export function PlannerPage() {
                       Use Gemini (LLM)
                     </label>
                   )}
-                  {serviceOnline ? (
+                  {serviceOnline || !isAuthed ? (
                     <div>
                       <Button
                         variant="secondary"
@@ -336,7 +366,7 @@ export function PlannerPage() {
                   <Button
                     onClick={handleGenerateGrocery}
                     loading={genGrocery.isPending}
-                    disabled={!plan}
+                    disabled={!plan && isAuthed}
                     className="bg-ink hover:bg-terracotta text-canvas"
                   >
                     Generate grocery list

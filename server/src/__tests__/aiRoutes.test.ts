@@ -14,6 +14,9 @@ jest.mock('../services/aiClient', () => ({
   getAssistantReply: jest.fn(),
   parsePantryText: jest.fn(),
   getCapabilities: jest.fn(),
+  getKnowledgeSubstitutes: jest.fn(),
+  getKnowledgePairings: jest.fn(),
+  getRecipeFootprint: jest.fn(),
 }));
 
 import { createApp } from '../app';
@@ -24,6 +27,9 @@ import {
   generateWeekPlan,
   getAssistantReply,
   getCapabilities,
+  getKnowledgePairings,
+  getKnowledgeSubstitutes,
+  getRecipeFootprint,
   getRecommendations,
   getSimilarRecipes,
   parsePantryText,
@@ -35,6 +41,11 @@ const mockedWeek = generateWeekPlan as jest.MockedFunction<typeof generateWeekPl
 const mockedChat = getAssistantReply as jest.MockedFunction<typeof getAssistantReply>;
 const mockedParse = parsePantryText as jest.MockedFunction<typeof parsePantryText>;
 const mockedCaps = getCapabilities as jest.MockedFunction<typeof getCapabilities>;
+const mockedSubstitutes = getKnowledgeSubstitutes as jest.MockedFunction<
+  typeof getKnowledgeSubstitutes
+>;
+const mockedPairings = getKnowledgePairings as jest.MockedFunction<typeof getKnowledgePairings>;
+const mockedFootprint = getRecipeFootprint as jest.MockedFunction<typeof getRecipeFootprint>;
 
 const app = createApp();
 
@@ -58,9 +69,53 @@ async function authedToken(): Promise<string> {
 
 describe('AI routes', () => {
   describe('POST /api/ai/recipes/recommend', () => {
-    it('returns 401 when unauthenticated', async () => {
-      const res = await request(app).post('/api/ai/recipes/recommend').send({ ingredients: ['rice'] });
-      expect(res.status).toBe(401);
+    it('serves guests: returns recommendations without a token', async () => {
+      mockedRecommend.mockResolvedValueOnce({
+        success: true,
+        count: 1,
+        strategy: 'hybrid',
+        results: [
+          {
+            recipe_id: 'rice-bowl',
+            title: 'Rice Bowl',
+            score: 0.8,
+            matched_ingredients: ['rice'],
+            reason: 'matches',
+          },
+        ],
+      });
+
+      const res = await request(app)
+        .post('/api/ai/recipes/recommend')
+        .send({ ingredients: ['rice'] });
+
+      expect(res.status).toBe(200);
+      expect(mockedRecommend).toHaveBeenCalledWith(
+        expect.objectContaining({ ingredients: ['rice'] })
+      );
+    });
+
+    it('serves guests: returns starter recipes for database scope with no inputs', async () => {
+      await Recipe.create({
+        title: 'Quick Oats',
+        slug: 'quick-oats',
+        ingredients: [{ name: 'oats' }],
+        instructions: ['boil'],
+        prepTime: 5,
+        cookTime: 5,
+        servings: 1,
+        difficulty: 'easy',
+      });
+
+      const res = await request(app)
+        .post('/api/ai/recipes/recommend')
+        .send({ scope: 'database' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.strategy).toBe('starter');
+      expect(res.body.results.length).toBeGreaterThan(0);
+      expect(res.body.results[0].title).toBe('Quick Oats');
+      expect(mockedRecommend).not.toHaveBeenCalled();
     });
 
     it('falls back to user pantry when no ingredients provided', async () => {
@@ -253,6 +308,23 @@ describe('AI routes', () => {
         .send({});
       expect(res.status).toBe(404);
     });
+
+    it('serves guests without a token', async () => {
+      mockedSimilar.mockResolvedValueOnce({
+        success: true,
+        recipe_id: 'pesto-pasta',
+        count: 0,
+        strategy: 'tfidf',
+        results: [],
+      });
+
+      const res = await request(app)
+        .post('/api/ai/recipes/pesto-pasta/similar')
+        .send({ top_k: 5 });
+
+      expect(res.status).toBe(200);
+      expect(mockedSimilar).toHaveBeenCalledWith('pesto-pasta', 5, 'tfidf');
+    });
   });
 
   describe('POST /api/ai/plan/week', () => {
@@ -324,6 +396,13 @@ describe('AI routes', () => {
   });
 
   describe('POST /api/ai/chat', () => {
+    it('returns 401 when unauthenticated', async () => {
+      const res = await request(app)
+        .post('/api/ai/chat')
+        .send({ messages: [{ role: 'user', content: 'What can I make?' }] });
+      expect(res.status).toBe(401);
+    });
+
     it('forwards profile context (pantry / prefs / allergies)', async () => {
       const token = await authedToken();
       await User.findOneAndUpdate(
@@ -410,6 +489,80 @@ describe('AI routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.llm.available).toBe(true);
       expect(res.body.llm.provider).toBe('gemini');
+    });
+
+    it('serves guests without a token', async () => {
+      mockedCaps.mockResolvedValueOnce({
+        success: true,
+        llm: { provider: 'gemini', model: 'gemini-1.5-flash', available: true },
+        features: {
+          recommend: true,
+          similar: true,
+          plan_week: true,
+          chat: true,
+          pantry_parse: true,
+        },
+      });
+      const res = await request(app).get('/api/ai/capabilities');
+      expect(res.status).toBe(200);
+      expect(res.body.llm.available).toBe(true);
+    });
+  });
+
+  describe('GET /api/ai/knowledge/substitutes', () => {
+    it('serves guests without a token', async () => {
+      mockedSubstitutes.mockResolvedValueOnce({
+        success: true,
+        ingredient: 'egg',
+        substitutions: [
+          {
+            target: 'egg',
+            substitute: 'flaxseed',
+            ratio: '1 tbsp + 3 tbsp water',
+            context: 'baking',
+            notes: 'Works as a binder.',
+          },
+        ],
+      });
+      const res = await request(app)
+        .get('/api/ai/knowledge/substitutes')
+        .query({ ingredient: 'egg' });
+      expect(res.status).toBe(200);
+      expect(res.body.substitutions).toHaveLength(1);
+      expect(mockedSubstitutes).toHaveBeenCalledWith('egg', undefined);
+    });
+  });
+
+  describe('GET /api/ai/knowledge/pairings', () => {
+    it('serves guests without a token', async () => {
+      mockedPairings.mockResolvedValueOnce({
+        success: true,
+        ingredient: 'garlic',
+        complements: ['butter'],
+      });
+      const res = await request(app)
+        .get('/api/ai/knowledge/pairings')
+        .query({ ingredient: 'garlic' });
+      expect(res.status).toBe(200);
+      expect(mockedPairings).toHaveBeenCalledWith('garlic');
+    });
+  });
+
+  describe('GET /api/ai/recipes/:slug/footprint', () => {
+    it('serves guests without a token', async () => {
+      mockedFootprint.mockResolvedValueOnce({
+        success: true,
+        recipe_id: 'pho',
+        title: 'Pho',
+        co2_kg: 1.2,
+        cost_usd: 3.5,
+        eco_score: 0.8,
+        categories: ['soup'],
+        breakdown: [],
+      });
+      const res = await request(app).get('/api/ai/recipes/pho/footprint');
+      expect(res.status).toBe(200);
+      expect(mockedFootprint).toHaveBeenCalledWith('pho');
     });
   });
 });

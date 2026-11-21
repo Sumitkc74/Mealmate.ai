@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useAuthStore } from '@/stores/authStore';
 import { useRecommendations } from '@/hooks/useRecommendations';
 import type { RecommendStrategy } from '@/hooks/useAiPlanner';
 import { extractErrorMessage } from '@/lib/api';
@@ -34,6 +35,9 @@ interface Props {
  * decide whether they want an AI-generated option not yet in the system.
  */
 export function SuggestedRecipes({ onGenerateNew, className = '' }: Props = {}) {
+  const isAuthed = useAuthStore((s) => Boolean(s.token));
+  const navigate = useNavigate();
+  const location = useLocation();
   const [strategy, setStrategy] = useState<RecommendStrategy>('hybrid');
   const [viewMode, setViewMode] = useState<'existing' | 'ai_option'>('existing');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -63,6 +67,13 @@ export function SuggestedRecipes({ onGenerateNew, className = '' }: Props = {}) 
   const error = isExisting ? dbError : aiError;
 
   const handleOpenAiGenerator = (initialPrompt = '') => {
+    // Generating (and saving) a new recipe needs an account.
+    if (!isAuthed) {
+      navigate('/login', {
+        state: { from: location.pathname, message: 'Sign in to generate recipes with AI.' },
+      });
+      return;
+    }
     if (onGenerateNew && !initialPrompt) {
       onGenerateNew();
       return;
@@ -101,7 +112,9 @@ export function SuggestedRecipes({ onGenerateNew, className = '' }: Props = {}) 
           </div>
           <p className="mt-1 text-xs text-text-muted">
             {isExisting
-              ? 'Comparing your pantry items with recipe ingredient lists in your database. Then decide if you want an AI-generated option.'
+              ? isAuthed
+                ? 'Comparing your pantry items with recipe ingredient lists in your database. Then decide if you want an AI-generated option.'
+                : 'Popular recipes from the database. Sign in to match them against your pantry.'
               : 'Machine-learning recommendations (TF-IDF, LSA and Collaborative). Review, generate, and save any dish.'}
           </p>
         </div>

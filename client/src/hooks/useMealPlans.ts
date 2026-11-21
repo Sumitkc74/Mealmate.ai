@@ -2,9 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { MealPlan, DayName, Slot, GroceryList } from '@/types';
 
-export function useMealPlans() {
+export function useMealPlans(enabled = true) {
   return useQuery({
     queryKey: ['mealplans'],
+    enabled,
     queryFn: async (): Promise<MealPlan[]> => {
       const { data } = await api.get<{ items: MealPlan[] }>('/mealplans');
       return data.items;

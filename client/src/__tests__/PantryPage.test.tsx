@@ -308,5 +308,17 @@ describe('PantryPage & Modern Minimalist Pantry UI', () => {
     expect(hScreen.getByText(/Loved by the whole family!/i)).toBeInTheDocument();
     expect(hScreen.getByRole('link', { name: /Cook Again/i })).toHaveAttribute('href', '/recipes/rec-123');
   });
+
+  it('lets guests browse the pantry with empty sections and a sign-in notice', async () => {
+    useAuthStore.setState({ token: null, user: null });
+    renderWithClient(<PantryPage />);
+
+    expect(await screen.findByText(/browsing as a guest/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: /pantry & preferences/i })).toBeInTheDocument();
+    expect(screen.getByText(/smart import and photo capture need an account/i)).toBeInTheDocument();
+    expect(screen.getByText(/ai recipe suggestions need an account/i)).toBeInTheDocument();
+    // No pantry items are shown, and nothing is posted to the profile.
+    expect(mockedPatch).not.toHaveBeenCalled();
+  });
 });
 

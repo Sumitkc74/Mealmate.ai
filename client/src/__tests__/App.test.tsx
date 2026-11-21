@@ -62,8 +62,16 @@ describe('App routing', () => {
     expect(screen.getByLabelText(/full name/i)).toBeInTheDocument();
   });
 
-  it('redirects unauthenticated users away from /planner', async () => {
+  it('lets guests browse /planner without signing in', async () => {
     renderAt('/planner');
+    expect(
+      await screen.findByRole('heading', { name: /meal planner/i }, { timeout: 5000 })
+    ).toBeInTheDocument();
+    expect(screen.getByText(/browsing as a guest/i)).toBeInTheDocument();
+  });
+
+  it('redirects unauthenticated users away from /recipes/new', async () => {
+    renderAt('/recipes/new');
     // Should land on login page.
     expect(await screen.findByText(/welcome back/i, {}, { timeout: 5000 })).toBeInTheDocument();
   });

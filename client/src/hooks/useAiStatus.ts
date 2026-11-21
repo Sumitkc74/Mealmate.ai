@@ -66,14 +66,15 @@ export function useAiStatus(): AiStatus {
   return {
     loading: false,
     serviceOnline: true,
-    llmOnline: data.llm.available,
+    // Defensive defaults: a partial capabilities payload must not crash the UI.
+    llmOnline: data.llm?.available ?? false,
     features: {
-      recommend: f.recommend,
-      similar: f.similar,
-      planWeek: f.plan_week,
-      chat: f.chat,
-      pantryParse: f.pantry_parse,
-      pantryVision: f.pantry_vision ?? false,
+      recommend: f?.recommend ?? false,
+      similar: f?.similar ?? false,
+      planWeek: f?.plan_week ?? false,
+      chat: f?.chat ?? false,
+      pantryParse: f?.pantry_parse ?? false,
+      pantryVision: f?.pantry_vision ?? false,
     },
   };
 }

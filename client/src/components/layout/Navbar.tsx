@@ -84,9 +84,9 @@ export function Navbar() {
           </Link>
         </div>
 
-        {/* Desktop Navigation Links — Recipes is public, the rest need an account */}
+        {/* Desktop Navigation Links — all pages are public; only adding needs an account */}
         <ul className="hidden items-center gap-0.5 md:flex">
-          {[...publicLinks, ...(isAuthed ? links : [])].map((l) => (
+          {[...publicLinks, ...links].map((l) => (
             <li key={l.to}>
               <NavLink
                 to={l.to}
@@ -182,7 +182,7 @@ export function Navbar() {
           ) : (
             <div className="flex flex-col gap-2 pt-1">
               <ul className="flex flex-col gap-1">
-                {publicLinks.map((l) => (
+                {[...publicLinks, ...links].map((l) => (
                   <li key={l.to}>
                     <NavLink
                       to={l.to}

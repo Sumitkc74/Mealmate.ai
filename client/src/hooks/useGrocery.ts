@@ -8,9 +8,10 @@ import {
   queueOfflineGroceryUpdate,
 } from '@/lib/offlineSync';
 
-export function useGroceryLists() {
+export function useGroceryLists(enabled = true) {
   return useQuery({
     queryKey: ['grocery'],
+    enabled,
     queryFn: async (): Promise<GroceryList[]> => {
       const { data } = await api.get<{ items: GroceryList[] }>('/grocery');
       return data.items;

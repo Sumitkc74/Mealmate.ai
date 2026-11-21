@@ -238,29 +238,47 @@ describe('RecipeDetailPage guest browsing', () => {
   beforeEach(() => {
     mockedGet.mockReset();
     mockedPatch.mockReset();
-    mockedGet.mockResolvedValue({ data: { recipe: mockRecipe } });
+    mockedGet.mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/ai/knowledge/substitutes')) {
+        return Promise.resolve({
+          data: {
+            success: true,
+            ingredient: 'Butter',
+            substitutions: [
+              {
+                target: 'Butter',
+                substitute: 'Olive oil',
+                ratio: '1:1',
+                context: 'savory',
+                notes: 'Works in most savory dishes.',
+              },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ data: { recipe: mockRecipe } });
+    });
   });
 
-  it('sends guests to sign in when they try an ingredient swap', async () => {
+  it('opens the swaps modal for guests instead of sending them to sign in', async () => {
     renderPageAsGuest();
     const user = userEvent.setup();
     const swapButtons = await screen.findAllByRole('button', { name: /swap\?/i });
     await user.click(swapButtons[0]!);
 
-    expect(await screen.findByText('Login page')).toBeInTheDocument();
-    expect(mockedGet).not.toHaveBeenCalledWith(
-      expect.stringContaining('/ai/knowledge/substitutes'),
-      expect.anything()
-    );
+    expect(await screen.findByRole('heading', { name: /culinary substitutions/i })).toBeInTheDocument();
+    expect(await screen.findByText('Olive oil')).toBeInTheDocument();
+    expect(screen.queryByText('Login page')).not.toBeInTheDocument();
   });
 
-  it('sends guests to sign in from the Ingredient Swaps button', async () => {
+  it('opens the swaps modal from the Ingredient Swaps button for guests', async () => {
     renderPageAsGuest();
     const user = userEvent.setup();
     const swapsButton = await screen.findByRole('button', { name: /ingredient swaps/i });
     await user.click(swapsButton);
 
-    expect(await screen.findByText('Login page')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /culinary substitutions/i })).toBeInTheDocument();
+    expect(screen.queryByText('Login page')).not.toBeInTheDocument();
   });
 });
 

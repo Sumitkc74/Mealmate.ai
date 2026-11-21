@@ -27,6 +27,7 @@ function renderPlanner() {
         <Routes>
           <Route path="/planner" element={<PlannerPage />} />
           <Route path="/grocery/:id" element={<div>Grocery page</div>} />
+          <Route path="/login" element={<div>Login page</div>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>
@@ -123,5 +124,55 @@ describe('PlannerPage', () => {
         expect.objectContaining({ day: 'Monday', slot: 'dinner', recipeId: null })
       );
     });
+  });
+
+  it('lets guests browse the grid and sends them to sign in to generate a week', async () => {
+    useAuthStore.setState({ token: null, user: null });
+    get.mockImplementation((url: string) => {
+      if (url === '/ai/capabilities') {
+        return Promise.resolve({
+          data: {
+            success: true,
+            llm: { provider: 'gemini', model: 'gemini-1.5-flash', available: true },
+            features: {
+              recommend: true,
+              similar: true,
+              plan_week: true,
+              chat: true,
+              pantry_parse: true,
+            },
+          },
+        });
+      }
+      return Promise.resolve({ data: { items: [], total: 0, pages: 1, page: 1, limit: 12 } });
+    });
+
+    renderPlanner();
+    expect(await screen.findByText(/browsing as a guest/i)).toBeInTheDocument();
+    const slots = await screen.findAllByTestId(/^slot-/);
+    expect(slots).toHaveLength(21);
+    expect(get).not.toHaveBeenCalledWith('/mealplans', expect.anything());
+
+    const generateBtn = await screen.findByRole('button', { name: /generate my week/i });
+    await userEvent.setup().click(generateBtn);
+    expect(await screen.findByText('Login page')).toBeInTheDocument();
+  });
+
+  it('still shows guests the Generate button when the AI service is offline', async () => {
+    useAuthStore.setState({ token: null, user: null });
+    get.mockImplementation((url: string) => {
+      if (url === '/ai/capabilities') {
+        return Promise.reject(new Error('service down'));
+      }
+      return Promise.resolve({ data: { items: [], total: 0, pages: 1, page: 1, limit: 12 } });
+    });
+
+    renderPlanner();
+    expect(await screen.findByText(/browsing as a guest/i)).toBeInTheDocument();
+    // A guest click only ever navigates to login, so the button must render
+    // even though the AI service is unreachable (no "AI planner offline" wall).
+    const generateBtn = await screen.findByRole('button', { name: /generate my week/i });
+    await userEvent.setup().click(generateBtn);
+    expect(await screen.findByText('Login page')).toBeInTheDocument();
   });
 });

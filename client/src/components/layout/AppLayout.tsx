@@ -4,11 +4,9 @@ import { Navbar } from './Navbar';
 import { AiAssistant } from '@/components/ai/AiAssistant';
 import { CookieConsentBanner } from '@/components/ui/CookieConsentBanner';
 import { openCookiePreferencesModal } from '@/components/ui/cookiePreferences';
-import { useAuthStore } from '@/stores/authStore';
 
 export function AppLayout() {
   const location = useLocation();
-  const isAuthed = useAuthStore((s) => Boolean(s.token && s.user));
   return (
     <div className="flex min-h-screen flex-col bg-canvas text-ink">
       <Navbar />
@@ -79,7 +77,9 @@ export function AppLayout() {
         </p>
       </footer>
 
-      {isAuthed && <AiAssistant />}
+      {/* The assistant renders for guests too: chat and Q&A show a sign-in
+          notice, while the Swaps tab works without an account. */}
+      <AiAssistant />
       <CookieConsentBanner />
     </div>
   );

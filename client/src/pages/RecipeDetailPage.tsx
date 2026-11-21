@@ -158,14 +158,8 @@ export function RecipeDetailPage() {
     setCookedModalOpen(true);
   }
 
-  // Ingredient swaps call a signed-in-only AI endpoint, so guests go to login first.
+  // Ingredient swaps are public: the knowledge-graph lookup needs no account.
   function handleSwapsClick(ingredientName: string) {
-    if (!isAuthed) {
-      navigate('/login', {
-        state: { from: `/recipes/${id}`, message: 'Sign in to see ingredient swaps.' },
-      });
-      return;
-    }
     setSelectedIng(ingredientName);
     setSubModalOpen(true);
   }

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { protect } from '../middleware/authMiddleware';
+import { protect, optionalProtect } from '../middleware/authMiddleware';
 import { validate } from '../middleware/validate';
 import { asyncHandler } from '../utils/asyncHandler';
 import { AppError } from '../utils/AppError';
@@ -59,12 +59,44 @@ const recommendSchema = z.object({
   scope: z.enum(['database', 'ai', 'all']).optional(),
 });
 
+/** Popular starter recipes for callers with no pantry, preferences, or likes (notably guests). */
+function starterResults(
+  dbRecipes: Array<{
+    _id: unknown;
+    slug?: string;
+    title: string;
+    imageUrl?: string;
+    prepTime?: number;
+    cookTime?: number;
+    servings?: number;
+    cuisine?: string;
+    difficulty?: string;
+  }>,
+  topK: number
+) {
+  return dbRecipes.slice(0, topK).map((d) => ({
+    _id: String(d._id),
+    recipe_id: d.slug || String(d._id),
+    title: d.title,
+    score: 0.85,
+    matched_ingredients: [] as string[],
+    reason: 'Popular recipe from your database',
+    imageUrl: d.imageUrl,
+    prepTime: d.prepTime,
+    cookTime: d.cookTime,
+    servings: d.servings,
+    cuisine: d.cuisine,
+    difficulty: d.difficulty,
+    inDatabase: true,
+  }));
+}
+
 router.post(
   '/recipes/recommend',
-  protect,
+  optionalProtect,
+  aiCostLimiter,
   validate({ body: recommendSchema }),
   asyncHandler(async (req, res) => {
-    if (!req.user) throw AppError.unauthorized();
     const { ingredients, dietary_preferences, top_k, usePantry, strategy, liked_recipe_ids, scope } =
       req.body as z.infer<typeof recommendSchema>;
 
@@ -72,8 +104,9 @@ router.post(
     let prefs = dietary_preferences;
     let allergies: string[] = [];
 
-    // Single consolidated database query if user profile data is needed
-    if ((ings.length === 0 && usePantry) || !prefs) {
+    // Single consolidated database query if user profile data is needed.
+    // Guests have no profile, so they keep the empty defaults.
+    if (req.user && ((ings.length === 0 && usePantry) || !prefs)) {
       const user = await User.findById(req.user.sub);
       if (ings.length === 0 && usePantry) {
         ings = user?.pantry?.map((p) => p.ingredient) ?? [];
@@ -106,6 +139,18 @@ router.post(
         });
         return;
       }
+      // Guests have no pantry, so pantry comparison would score every recipe 0.
+      // Show them the popular starters instead.
+      if (!req.user && ings.length === 0 && !hasPrefs && !hasLikes) {
+        const starters = starterResults(dbRecipes, top_k);
+        res.json({
+          success: true,
+          count: starters.length,
+          strategy: 'starter',
+          results: starters,
+        });
+        return;
+      }
       const topItems = rankDbRecipes(dbRecipes, ings, top_k);
       res.json({
         success: true,
@@ -129,26 +174,12 @@ router.post(
     // deliver popular starter recipes from MongoDB rather than failing with 400.
     if (ings.length === 0 && !hasPrefs && !hasLikes && strategy !== 'collab') {
       if (dbRecipes.length > 0) {
-        const starters = dbRecipes.slice(0, top_k);
+        const starters = starterResults(dbRecipes, top_k);
         res.json({
           success: true,
           count: starters.length,
           strategy: 'starter',
-          results: starters.map((d) => ({
-            _id: String(d._id),
-            recipe_id: d.slug || String(d._id),
-            title: d.title,
-            score: 0.85,
-            matched_ingredients: [],
-            reason: 'Popular recipe from your database',
-            imageUrl: d.imageUrl,
-            prepTime: d.prepTime,
-            cookTime: d.cookTime,
-            servings: d.servings,
-            cuisine: d.cuisine,
-            difficulty: d.difficulty,
-            inDatabase: true,
-          })),
+          results: starters,
         });
         return;
       }
@@ -456,7 +487,8 @@ async function hydrateBySlug(recipeIds: string[]) {
 
 router.post(
   '/recipes/:slug/similar',
-  protect,
+  optionalProtect,
+  aiCostLimiter,
   validate({ body: similarSchema }),
   asyncHandler(async (req, res) => {
     const slug = req.params.slug;
@@ -734,7 +766,7 @@ router.post(
 
 router.get(
   '/capabilities',
-  protect,
+  optionalProtect,
   asyncHandler(async (_req, res) => {
     const caps = await getCapabilities();
     res.json(caps);
@@ -773,7 +805,8 @@ router.post(
 
 router.get(
   '/recipes/:slug/footprint',
-  protect,
+  optionalProtect,
+  aiCostLimiter,
   asyncHandler(async (req, res) => {
     const slug = req.params.slug;
     if (!slug) throw AppError.badRequest('Recipe slug is required');
@@ -895,10 +928,9 @@ const substitutesSchema = z.object({
 
 router.get(
   '/knowledge/substitutes',
-  protect,
+  optionalProtect,
   validate({ query: substitutesSchema }),
   asyncHandler(async (req, res) => {
-    if (!req.user) throw AppError.unauthorized();
     const { ingredient, context } = req.query as unknown as z.infer<typeof substitutesSchema>;
     try {
       const result = await getKnowledgeSubstitutes(ingredient, context);
@@ -915,10 +947,9 @@ const pairingsSchema = z.object({
 
 router.get(
   '/knowledge/pairings',
-  protect,
+  optionalProtect,
   validate({ query: pairingsSchema }),
   asyncHandler(async (req, res) => {
-    if (!req.user) throw AppError.unauthorized();
     const { ingredient } = req.query as unknown as z.infer<typeof pairingsSchema>;
     try {
       const result = await getKnowledgePairings(ingredient);
