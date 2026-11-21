@@ -47,6 +47,33 @@ export function useRegister() {
   });
 }
 
+export function useForgotPassword() {
+  return useMutation({
+    mutationFn: async (input: { email: string }): Promise<{ success: boolean; message: string }> => {
+      const { data } = await api.post<{ success: boolean; message: string }>(
+        '/auth/forgot-password',
+        input
+      );
+      return data;
+    },
+  });
+}
+
+export function useResetPassword() {
+  return useMutation({
+    mutationFn: async (input: {
+      token: string;
+      password: string;
+    }): Promise<{ success: boolean; message: string }> => {
+      const { data } = await api.post<{ success: boolean; message: string }>(
+        '/auth/reset-password',
+        input
+      );
+      return data;
+    },
+  });
+}
+
 export function useMe() {
   const token = useAuthStore((s) => s.token);
   const setUser = useAuthStore((s) => s.setUser);

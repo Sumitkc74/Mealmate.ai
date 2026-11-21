@@ -31,6 +31,10 @@ export interface IUser {
   termsAcceptedAt?: Date;
   dietaryConsentAt?: Date;
   marketingOptIn?: boolean;
+  /** SHA-256 hash of the active password-reset token (never the raw token). */
+  passwordResetToken?: string;
+  /** Expiry of the active password-reset token. */
+  passwordResetExpires?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -101,6 +105,10 @@ const UserSchema = new Schema<IUser, UserModel, IUserMethods>(
     termsAcceptedAt: { type: Date, default: Date.now },
     dietaryConsentAt: { type: Date },
     marketingOptIn: { type: Boolean, default: false },
+    // Password-reset token hash + expiry. select:false so they are never
+    // returned by default; the reset handler selects them explicitly.
+    passwordResetToken: { type: String, select: false },
+    passwordResetExpires: { type: Date, select: false },
   },
   {
     timestamps: true,
@@ -111,6 +119,8 @@ const UserSchema = new Schema<IUser, UserModel, IUserMethods>(
         delete ret._id;
         delete ret.__v;
         delete ret.password;
+        delete ret.passwordResetToken;
+        delete ret.passwordResetExpires;
         return ret;
       },
     },

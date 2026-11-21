@@ -3,6 +3,8 @@ import rateLimit from 'express-rate-limit';
 import {
   register,
   login,
+  forgotPassword,
+  resetPassword,
   me,
   updateProfile,
   exportData,
@@ -10,7 +12,13 @@ import {
 } from '../controllers/authController';
 import { validate } from '../middleware/validate';
 import { protect } from '../middleware/authMiddleware';
-import { registerSchema, loginSchema, updateProfileSchema } from '../validators/authSchemas';
+import {
+  registerSchema,
+  loginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  updateProfileSchema,
+} from '../validators/authSchemas';
 
 const router = Router();
 
@@ -25,6 +33,18 @@ const authLimiter = rateLimit({
 
 router.post('/register', authLimiter, validate({ body: registerSchema }), register);
 router.post('/login', authLimiter, validate({ body: loginSchema }), login);
+router.post(
+  '/forgot-password',
+  authLimiter,
+  validate({ body: forgotPasswordSchema }),
+  forgotPassword
+);
+router.post(
+  '/reset-password',
+  authLimiter,
+  validate({ body: resetPasswordSchema }),
+  resetPassword
+);
 router.get('/me', protect, me);
 router.patch('/me', protect, validate({ body: updateProfileSchema }), updateProfile);
 router.get('/me/export', protect, exportData);

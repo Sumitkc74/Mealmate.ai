@@ -14,6 +14,15 @@ export const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().email(),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().trim().min(1),
+  password: z.string().min(8).max(128),
+});
+
 const pantryItemSchema = z.object({
   ingredient: z.string().trim().toLowerCase().min(1).max(100),
   quantity: z.string().trim().max(20).optional(),
@@ -45,4 +54,6 @@ export const updateProfileSchema = z
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

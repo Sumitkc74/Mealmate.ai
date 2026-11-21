@@ -99,6 +99,12 @@ export function LoginPage() {
             placeholder="••••••••"
           />
 
+          <div className="flex justify-end">
+            <Link to="/forgot-password" className="text-sm font-medium text-brand-700 hover:underline">
+              Forgot password?
+            </Link>
+          </div>
+
           {formError && (
             <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
               {formError}

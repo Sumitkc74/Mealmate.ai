@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { createHash, randomBytes } from 'node:crypto';
 import { User } from '../models/User';
 import { MealPlan } from '../models/MealPlan';
 import { GroceryList } from '../models/GroceryList';
@@ -6,7 +7,14 @@ import { Recipe } from '../models/Recipe';
 import { AppError } from '../utils/AppError';
 import { signAccessToken } from '../utils/jwt';
 import { asyncHandler } from '../utils/asyncHandler';
-import type { RegisterInput, LoginInput, UpdateProfileInput } from '../validators/authSchemas';
+import { frontendBaseUrl, isMailConfigured, sendPasswordResetEmail } from '../services/mailer';
+import type {
+  RegisterInput,
+  LoginInput,
+  ForgotPasswordInput,
+  ResetPasswordInput,
+  UpdateProfileInput,
+} from '../validators/authSchemas';
 
 export const register = asyncHandler<unknown, unknown, RegisterInput>(async (req, res) => {
   const { name, email, password, termsAccepted, dietaryConsent, marketingOptIn } = req.body;
@@ -157,3 +165,53 @@ export const deleteAccount = asyncHandler(async (req: Request, res: Response) =>
       'Your account and all associated personal data have been permanently deleted in accordance with GDPR / CCPA right to erasure.',
   });
 });
+
+/** How long a password-reset link stays valid. */
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+export const forgotPassword = asyncHandler<unknown, unknown, ForgotPasswordInput>(
+  async (req, res) => {
+    // Checked before the user lookup so the response cannot reveal whether
+    // an email is registered.
+    if (!isMailConfigured()) {
+      throw new AppError('Password reset is not available right now', 503);
+    }
+
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+    if (user) {
+      const token = randomBytes(32).toString('hex');
+      user.passwordResetToken = createHash('sha256').update(token).digest('hex');
+      user.passwordResetExpires = new Date(Date.now() + RESET_TOKEN_TTL_MS);
+      await user.save();
+      const resetUrl = `${frontendBaseUrl()}/reset-password?token=${token}`;
+      await sendPasswordResetEmail(user.email, resetUrl);
+    }
+    // Always the same answer: never reveal whether the email is registered.
+    res.json({
+      success: true,
+      message: 'If an account exists for that email, a password reset link is on its way.',
+    });
+  }
+);
+
+export const resetPassword = asyncHandler<unknown, unknown, ResetPasswordInput>(
+  async (req, res) => {
+    const { token, password } = req.body;
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const user = await User.findOne({
+      passwordResetToken: tokenHash,
+      passwordResetExpires: { $gt: new Date() },
+    }).select('+passwordResetToken +passwordResetExpires');
+    if (!user) throw AppError.badRequest('Invalid or expired reset link');
+
+    // The pre-save hook hashes the new password; clearing the token fields
+    // makes the link single-use.
+    user.password = password;
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+    await user.save();
+
+    res.json({ success: true, message: 'Password reset. Sign in with your new password.' });
+  }
+);
