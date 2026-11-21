@@ -2,9 +2,8 @@ import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/Button';
-import { extractErrorMessage } from '@/lib/api';
+import { api, extractErrorMessage } from '@/lib/api';
 import type { PantryItem } from '@/types';
-import { useAuthStore } from '@/stores/authStore';
 import { useAiStatus } from '@/hooks/useAiStatus';
 import { useRecipes } from '@/hooks/useRecipes';
 
@@ -45,7 +44,6 @@ export function RagRecipeSuggester({ pantry, dietaryPreferences, allergies }: Pr
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
-  const token = useAuthStore((s) => s.token);
   const hasPantry = pantry.length > 0;
 
   const aiStatus = useAiStatus();
@@ -70,21 +68,20 @@ export function RagRecipeSuggester({ pantry, dietaryPreferences, allergies }: Pr
     setResult(null);
     setExpanded(true);
     try {
-      const res = await fetch('/api/ai/rag/suggest', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
+      // Routed through the shared api client (baseURL = VITE_API_URL) so this
+      // works in production: a relative /api path only works behind Vite's
+      // dev/preview proxy and returns the SPA HTML on Vercel.
+      const res = await api.post<RAGResult>(
+        '/ai/rag/suggest',
+        {
           pantry: pantry.map((p) => p.ingredient),
           dietary_preferences: dietaryPreferences,
           allergies,
           top_k: 5,
-        }),
-      });
-      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-      const data: RAGResult = await res.json();
+        },
+        { timeout: 30_000 },
+      );
+      const data: RAGResult = res.data;
       setResult(data);
     } catch (err) {
       setError(extractErrorMessage(err, 'Could not fetch suggestions - try again'));

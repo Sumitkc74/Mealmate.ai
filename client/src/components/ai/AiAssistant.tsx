@@ -12,7 +12,7 @@ import {
   type ChatMessage,
 } from '@/hooks/useAiPlanner';
 import { useAiStatus } from '@/hooks/useAiStatus';
-import { extractErrorMessage } from '@/lib/api';
+import { api, extractErrorMessage } from '@/lib/api';
 
 /**
  * Floating cooking-assistant chat widget. Renders a sparkly FAB in the
@@ -56,11 +56,18 @@ export function AiAssistant() {
     setSubLoading(true);
     setSubError(null);
     try {
-      const res = await fetch(`/api/ai/knowledge/substitutes?ingredient=${encodeURIComponent(clean)}`, {
-        ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
-      });
-      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-      const data = await res.json();
+      // Routed through the shared api client (baseURL = VITE_API_URL) so this
+      // works in production: a relative /api path only works behind Vite's
+      // dev/preview proxy and returns the SPA HTML on Vercel.
+      const res = await api.get<{ substitutions?: Array<{ target: string; substitute: string; ratio: string; context: string; notes: string }> }>(
+        '/ai/knowledge/substitutes',
+        {
+          params: { ingredient: clean },
+          // 30s so the call can outlast a sleeping free-tier AI service waking up.
+          timeout: 30_000,
+        },
+      );
+      const data = res.data;
       setSubResults(data.substitutions || []);
       if (!data.substitutions || data.substitutions.length === 0) {
         setSubError(`No direct substitutes in Knowledge Graph for "${clean}". Try buttermilk, egg, butter, or soy sauce.`);
@@ -80,16 +87,15 @@ export function AiAssistant() {
     setQaError(null);
     setQaDraft('');
     try {
-      const res = await fetch('/api/ai/rag/query', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ question: trimmed, top_k: 5 }),
-      });
-      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-      const data = await res.json();
+      // Routed through the shared api client (baseURL = VITE_API_URL) so this
+      // works in production: a relative /api path only works behind Vite's
+      // dev/preview proxy and returns the SPA HTML on Vercel.
+      const res = await api.post<{ answer: string; recipes?: QaRecipeRef[] }>(
+        '/ai/rag/query',
+        { question: trimmed, top_k: 5 },
+        { timeout: 30_000 },
+      );
+      const data = res.data;
       setQaHistory((h) => [...h, {
         question: trimmed,
         answer: data.answer,
