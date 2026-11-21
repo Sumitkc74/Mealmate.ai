@@ -3,6 +3,29 @@ import { useAuthStore } from '@/stores/authStore';
 
 const baseURL = import.meta.env.VITE_API_URL ?? '/api';
 
+/**
+ * Resolve a recipe image URL for display. Absolute URLs (remote photos,
+ * generated images) pass through unchanged. Server-relative paths such as
+ * `/static/recipe-images/<hash>.jpg` are hosted by the API server, so they
+ * must be resolved against the API origin — used verbatim they would hit
+ * the Vercel origin instead, which answers with the SPA HTML and the image
+ * silently fails to load.
+ */
+export function resolveImageUrl(url?: string | null): string | undefined {
+  if (!url) return undefined;
+  if (/^(https?:|data:|blob:)/i.test(url)) return url;
+  if (url.startsWith('/')) {
+    // Read at call time (not module load) so the value tracks the runtime env.
+    const apiUrl = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api';
+    try {
+      return new URL(apiUrl, window.location.origin).origin + url;
+    } catch {
+      return url;
+    }
+  }
+  return url;
+}
+
 export const api: AxiosInstance = axios.create({
   baseURL,
   timeout: 15_000,

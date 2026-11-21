@@ -12,7 +12,7 @@ import {
   type ChatMessage,
 } from '@/hooks/useAiPlanner';
 import { useAiStatus } from '@/hooks/useAiStatus';
-import { api, extractErrorMessage } from '@/lib/api';
+import { api, extractErrorMessage, resolveImageUrl } from '@/lib/api';
 
 /**
  * Floating cooking-assistant chat widget. Renders a sparkly FAB in the
@@ -692,7 +692,7 @@ function AppliedActionCard({ action }: { action: AppliedAction }) {
     <div className="w-full max-w-[300px] overflow-hidden rounded-lg border border-line bg-card text-xs text-ink shadow-sm">
       {recipe.imageUrl && (
         <img
-          src={recipe.imageUrl}
+          src={resolveImageUrl(recipe.imageUrl)}
           alt={recipe.title}
           width={300}
           height={112}

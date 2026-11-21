@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Recipe } from '@/types';
 import { cn } from '@/lib/cn';
+import { resolveImageUrl } from '@/lib/api';
 
 interface RecipeCardProps {
   recipe: Recipe;
@@ -31,7 +32,7 @@ export function RecipeCard({ recipe, className }: RecipeCardProps) {
       <div className="relative aspect-[16/10] w-full overflow-hidden bg-canvas">
         {showImage ? (
           <img
-            src={recipe.imageUrl}
+            src={resolveImageUrl(recipe.imageUrl)}
             alt={recipe.title}
             width={400}
             height={250}

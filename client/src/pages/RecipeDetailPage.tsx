@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { useDeleteRecipe, useRecipe } from '@/hooks/useRecipes';
 import { useAuthStore } from '@/stores/authStore';
-import { extractErrorMessage } from '@/lib/api';
+import { extractErrorMessage, resolveImageUrl } from '@/lib/api';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { SimilarRecipes } from '@/components/recipes/SimilarRecipes';
 import { IngredientSubstituteModal } from '@/components/recipes/IngredientSubstituteModal';
@@ -297,7 +297,7 @@ export function RecipeDetailPage() {
       <div className="overflow-hidden rounded-lg bg-canvas border border-line">
         {showImage ? (
           <img
-            src={recipe.imageUrl}
+            src={resolveImageUrl(recipe.imageUrl)}
             alt={recipe.title}
             width={800}
             height={360}
