@@ -40,7 +40,7 @@ export function RegisterPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [termsAccepted, setTermsAccepted] = useState(true);
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [dietaryConsent, setDietaryConsent] = useState(true);
   const [marketingOptIn, setMarketingOptIn] = useState(false);
   const [showExplanation, setShowExplanation] = useState(false);
