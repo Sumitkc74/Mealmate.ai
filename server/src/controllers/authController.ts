@@ -27,7 +27,10 @@ export const register = asyncHandler<unknown, unknown, RegisterInput>(async (req
   res.status(201).json({
     success: true,
     token,
-    user: { id: String(user._id), name: user.name, email: user.email, role: user.role },
+    // Return the full profile (pantry, preferences, allergies): the client
+    // keeps this user in its store, and pages that read user.pantry directly
+    // would otherwise crash on the missing field after sign-up.
+    user: user.toJSON(),
   });
 });
 
@@ -43,7 +46,9 @@ export const login = asyncHandler<unknown, unknown, LoginInput>(async (req, res)
   res.json({
     success: true,
     token,
-    user: { id: String(user._id), name: user.name, email: user.email, role: user.role },
+    // Full profile, same reason as register: the client stores this user and
+    // reads user.pantry / preferences from it.
+    user: user.toJSON(),
   });
 });
 

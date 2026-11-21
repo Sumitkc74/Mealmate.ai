@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PantryPage } from '@/pages/PantryPage';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
+import type { User } from '@/types';
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
@@ -319,6 +320,37 @@ describe('PantryPage & Modern Minimalist Pantry UI', () => {
     expect(screen.getByText(/ai recipe suggestions need an account/i)).toBeInTheDocument();
     // No pantry items are shown, and nothing is posted to the profile.
     expect(mockedPatch).not.toHaveBeenCalled();
+  });
+
+  it('adds a pantry item when the signed-in user carries no pantry field yet', async () => {
+    // Regression: auth responses used to return only id/name/email/role, so a
+    // freshly signed-in user's pantry was undefined and adding crashed
+    // silently outside the error handling, leaving the typed value in the form.
+    const slimUser = { id: 'u2', name: 'Fresh', email: 'fresh@test.com', role: 'user' } as User;
+    useAuthStore.setState({ token: 'test-token', user: slimUser });
+    mockedPatch.mockResolvedValue({
+      data: {
+        user: {
+          ...slimUser,
+          pantry: [{ ingredient: 'tomato', category: 'produce' }],
+          dietaryPreferences: [],
+          allergies: [],
+        },
+      },
+    });
+    renderWithClient(<PantryPage />);
+    const user = userEvent.setup();
+    const pantrySection = screen.getByRole('region', { name: /in your pantry/i });
+    const pScreen = within(pantrySection);
+    await user.type(pScreen.getByLabelText(/ingredient name/i), 'tomato');
+    await user.click(pScreen.getByRole('button', { name: /^\+ add$/i }));
+
+    expect(mockedPatch).toHaveBeenCalledWith(
+      '/auth/me',
+      expect.objectContaining({ pantry: [expect.objectContaining({ ingredient: 'tomato' })] }),
+    );
+    expect(await pScreen.findByText('tomato')).toBeInTheDocument();
+    expect(screen.queryByText(/could not add pantry item/i)).not.toBeInTheDocument();
   });
 });
 

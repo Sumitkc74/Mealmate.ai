@@ -44,8 +44,12 @@ export function PantryPage() {
       return;
     }
     setError(null);
-    const next = [...user.pantry, item];
     try {
+      // Guard: a freshly signed-in user may carry no pantry field yet
+      // (auth responses used to return only id/name/email/role), and the
+      // spread must live inside the try so a failure shows an error instead
+      // of failing silently with the typed value left in the form.
+      const next = [...(user.pantry ?? []), item];
       await update.mutateAsync({ pantry: next });
       flashSaved();
     } catch (err) {
@@ -59,8 +63,8 @@ export function PantryPage() {
       return;
     }
     setError(null);
-    const next = user.pantry.filter((_, i) => i !== idx);
     try {
+      const next = (user.pantry ?? []).filter((_, i) => i !== idx);
       await update.mutateAsync({ pantry: next });
       flashSaved();
     } catch (err) {

@@ -25,6 +25,12 @@ describe('Auth routes', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.token).toEqual(expect.any(String));
     expect(res.body.user.email).toBe(creds.email);
+    // The client stores this user and reads profile fields from it, so the
+    // auth response must carry the full profile, not just id/name/email/role.
+    expect(res.body.user.pantry).toEqual([]);
+    expect(res.body.user.dietaryPreferences).toEqual([]);
+    expect(res.body.user.allergies).toEqual([]);
+    expect(res.body.user.password).toBeUndefined();
   });
 
   it('POST /api/auth/register rejects duplicate email', async () => {
@@ -47,6 +53,11 @@ describe('Auth routes', () => {
       .send({ email: creds.email, password: creds.password });
     expect(res.status).toBe(200);
     expect(res.body.token).toEqual(expect.any(String));
+    // Same full-profile requirement as register (see above).
+    expect(res.body.user.pantry).toEqual([]);
+    expect(res.body.user.dietaryPreferences).toEqual([]);
+    expect(res.body.user.allergies).toEqual([]);
+    expect(res.body.user.password).toBeUndefined();
   });
 
   it('POST /api/auth/login rejects invalid password', async () => {
