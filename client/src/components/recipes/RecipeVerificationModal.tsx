@@ -153,6 +153,18 @@ export function RecipeVerificationModal({
                   </ul>
                 </div>
               )}
+
+              {/* Publish-anyway tag notice */}
+              {isReview && (
+                <div className="rounded border border-line p-3 bg-canvas">
+                  <p className="text-xs text-text-muted leading-relaxed">
+                    Publishing anyway will add a{' '}
+                    <span className="font-mono font-semibold text-text">needs-review</span>{' '}
+                    tag to this recipe, so other users know it didn&apos;t fully pass
+                    verification. Fix the points above and re-verify to remove it.
+                  </p>
+                </div>
+              )}
             </div>
           ) : (
             <p className="text-center text-sm text-text-muted py-6">

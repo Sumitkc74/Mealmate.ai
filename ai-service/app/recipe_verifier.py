@@ -397,10 +397,19 @@ async def verify_recipe_with_ai(req: VerifyRecipeRequest) -> VerifyRecipeRespons
     prompt = f"""You are an expert chef and food safety inspector. Evaluate the following recipe for culinary realism, edible ingredient harmony, and food safety:
 
 Title: {req.title}
+Description: {req.description or 'Unspecified'}
 Cuisine: {req.cuisine or 'Unspecified'}
 Ingredients: {', '.join(str(i.get('name', '')) for i in req.ingredients)}
 Instructions: {' | '.join(req.instructions)}
-Prep Time: {req.prep_time} mins, Cook Time: {req.cook_time} mins
+Prep Time: {req.prep_time} mins, Cook Time: {req.cook_time} mins, Servings: {req.servings}
+
+Also check the recipe's internal coherence — these matter as much as safety, because a misleading recipe pollutes a shared recipe list:
+- Title vs ingredients: the dish named in the title must match what is actually in the ingredients. If the title names a main ingredient or protein (for example chicken, beef, pork, fish) that does not appear anywhere in the ingredients, or the title/description claims the dish is vegan or vegetarian while the ingredients include meat, dairy, or egg (or the reverse), that is a coherence problem. Example: a "Chicken Biryani" whose ingredients are mushrooms and chickpeas, with no chicken, is mislabeled.
+- Times vs instructions: compare Prep Time and Cook Time against the durations stated in the instructions (for example "simmer for 4 to 5 hours" or "bake 15 to 20 minutes"). If the stated times are wildly inconsistent with what the instructions require, that is an instructions problem.
+- Servings vs instructions: if the instructions state a number of portions or bowls that contradicts the Servings value, that is a coherence problem.
+- Ingredients in the instructions: if a step mentions an ingredient that is not in the ingredient list, that is a completeness problem.
+
+Report each coherence problem as a concern with severity "warning". When a contradiction is clear, set your score to 55 or below so the recipe is flagged for review rather than verified. Only return severity "error" or is_culinary_valid false when the recipe is unsafe, inedible, or so incoherent it cannot be cooked as written.
 
 Respond in JSON matching this schema:
 {{

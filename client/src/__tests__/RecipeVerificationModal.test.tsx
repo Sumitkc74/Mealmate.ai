@@ -105,5 +105,48 @@ describe('RecipeVerificationModal', () => {
     expect(screen.queryByRole('button', { name: /Confirm & Publish/i })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Close & Edit/i })).toBeInTheDocument();
   });
+
+  it('renders needs_review with Publish Anyway and the needs-review tag notice', async () => {
+    const user = userEvent.setup();
+    const onConfirmPublish = vi.fn();
+
+    const mockReview: VerifyRecipeResponse = {
+      success: true,
+      is_valid: true,
+      score: 60,
+      verdict: 'needs_review',
+      summary: 'Recipe looks plausible but has areas that could be improved before sharing.',
+      issues: [
+        {
+          severity: 'warning',
+          category: 'coherence',
+          message: 'Title names chicken but no chicken appears in the ingredients.',
+        },
+      ],
+      detected_allergens: [],
+      suggestions: [],
+    };
+
+    render(
+      <RecipeVerificationModal
+        isOpen={true}
+        onClose={vi.fn()}
+        onConfirmPublish={onConfirmPublish}
+        isLoading={false}
+        verification={mockReview}
+      />
+    );
+
+    expect(screen.getByText(/Review Recommendations/i)).toBeInTheDocument();
+    expect(screen.getByText(/Title names chicken/i)).toBeInTheDocument();
+    expect(screen.getByText(/needs-review/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/so other users know it didn.t fully pass verification/i)
+    ).toBeInTheDocument();
+
+    const publishBtn = screen.getByRole('button', { name: /Publish Anyway/i });
+    await user.click(publishBtn);
+    expect(onConfirmPublish).toHaveBeenCalledTimes(1);
+  });
 });
 

@@ -5,7 +5,8 @@ import { AppError } from '../utils/AppError';
 import { asyncHandler } from '../utils/asyncHandler';
 import { User } from '../models/User';
 import { generateRecipeWithRetry, saveGeneratedRecipe } from '../services/chatActions';
-import { verifyRecipe, assertRecipeSafe, estimateNutrition } from '../services/recipeVerifier';
+import { verifyRecipe, assertRecipeSafe, estimateNutrition, applyVerificationTag } from '../services/recipeVerifier';
+import type { VerifyRecipeResponse } from '../services/aiClient';
 import type {
   CreateRecipeInput,
   UpdateRecipeInput,
@@ -65,8 +66,12 @@ export const getRecipe = asyncHandler<{ id: string }>(async (req, res) => {
 export const createRecipe = asyncHandler<unknown, unknown, CreateRecipeInput>(
   async (req, res) => {
     if (!req.user) throw AppError.unauthorized();
-    await assertRecipeSafe(req.body);
-    const recipe = await Recipe.create({ ...req.body, createdBy: req.user.sub });
+    const verification = await assertRecipeSafe(req.body);
+    const recipe = await Recipe.create({
+      ...req.body,
+      tags: applyVerificationTag(req.body.tags, verification.verdict),
+      createdBy: req.user.sub,
+    });
     res.status(201).json({ success: true, recipe });
   }
 );
@@ -79,14 +84,19 @@ export const bulkCreateRecipes = asyncHandler<unknown, unknown, BulkCreateRecipe
       throw AppError.badRequest('No recipes provided for bulk import');
     }
 
+    const verifications: VerifyRecipeResponse[] = [];
     for (const r of recipes) {
-      await assertRecipeSafe(r);
+      verifications.push(await assertRecipeSafe(r));
     }
 
     const createdRecipes = [];
+    let i = 0;
     for (const r of recipes) {
+      const verification = verifications[i];
+      i++;
       const doc = await Recipe.create({
         ...r,
+        tags: applyVerificationTag(r.tags, verification?.verdict),
         source: 'user',
         createdBy: req.user.sub,
       });
@@ -217,9 +227,10 @@ export const updateRecipe = asyncHandler<{ id: string }, unknown, UpdateRecipeIn
       cookTime: req.body.cookTime ?? recipe.cookTime,
       servings: req.body.servings ?? recipe.servings,
     };
-    await assertRecipeSafe(candidate);
+    const verification = await assertRecipeSafe(candidate);
 
     Object.assign(recipe, req.body);
+    recipe.tags = applyVerificationTag(recipe.tags, verification.verdict);
     await recipe.save();
     res.json({ success: true, recipe });
     void syncRecipesToRag();

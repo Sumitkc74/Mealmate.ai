@@ -2,6 +2,17 @@ import request from 'supertest';
 import { createApp } from '../app';
 import { connectInMemoryDB, clearDB, disconnectInMemoryDB } from '../test/db';
 import { Recipe } from '../models/Recipe';
+import { verifyRecipeWithAiService } from '../services/aiClient';
+
+// Mock the AI-service call: by default it fails (service unreachable), so the
+// deterministic fallback runs — the same behavior as the unmocked suite.
+// Individual tests override it with mockResolvedValueOnce.
+jest.mock('../services/aiClient', () => ({
+  ...jest.requireActual('../services/aiClient'),
+  verifyRecipeWithAiService: jest.fn(),
+}));
+const mockedVerify = verifyRecipeWithAiService as jest.Mock;
+mockedVerify.mockRejectedValue(new Error('ai-service unavailable'));
 
 const app = createApp();
 
@@ -192,6 +203,100 @@ describe('Recipe Verification and Safety Guardrails', () => {
 
       expect(updateRes.status).toBe(400);
       expect(updateRes.body.message).toMatch(/hazardous|toxic|verification failed/i);
+    });
+  });
+
+  describe('Needs-review tagging', () => {
+    const needsReviewResult = {
+      success: true,
+      is_valid: true,
+      score: 60,
+      verdict: 'needs_review',
+      summary: 'Recipe looks plausible but has areas that could be improved before sharing.',
+      issues: [
+        {
+          severity: 'warning',
+          category: 'coherence',
+          message: 'Title names chicken but no chicken appears in the ingredients.',
+        },
+      ],
+      detected_allergens: [],
+      suggestions: [],
+    };
+
+    const verifiedResult = {
+      success: true,
+      is_valid: true,
+      score: 95,
+      verdict: 'verified',
+      summary: 'Recipe verified! Safe, culinary-sound, and ready to publish.',
+      issues: [],
+      detected_allergens: [],
+      suggestions: [],
+    };
+
+    it('tags a recipe published anyway (needs_review) so other users know', async () => {
+      mockedVerify.mockResolvedValueOnce(needsReviewResult);
+
+      const res = await request(app)
+        .post('/api/recipes')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...validRecipe, tags: ['dinner'] });
+
+      expect(res.status).toBe(201);
+      expect(res.body.recipe.tags).toContain('needs-review');
+      expect(res.body.recipe.tags).toContain('dinner');
+    });
+
+    it('strips a user-supplied needs-review tag when the recipe verifies', async () => {
+      mockedVerify.mockResolvedValueOnce(verifiedResult);
+
+      const res = await request(app)
+        .post('/api/recipes')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...validRecipe, tags: ['dinner', 'needs-review'] });
+
+      expect(res.status).toBe(201);
+      expect(res.body.recipe.tags).not.toContain('needs-review');
+      expect(res.body.recipe.tags).toContain('dinner');
+    });
+
+    it('removes the tag when an edit brings the recipe to verified', async () => {
+      mockedVerify.mockResolvedValueOnce(needsReviewResult);
+      const created = await request(app)
+        .post('/api/recipes')
+        .set('Authorization', `Bearer ${token}`)
+        .send(validRecipe);
+      const recipeId = created.body.recipe.id ?? created.body.recipe._id;
+      expect(created.body.recipe.tags).toContain('needs-review');
+
+      mockedVerify.mockResolvedValueOnce(verifiedResult);
+      const updated = await request(app)
+        .patch(`/api/recipes/${recipeId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Creamy Garlic Butter Pasta' });
+
+      expect(updated.status).toBe(200);
+      expect(updated.body.recipe.tags).not.toContain('needs-review');
+    });
+
+    it('adds the tag when an edit drops the recipe to needs_review', async () => {
+      mockedVerify.mockResolvedValueOnce(verifiedResult);
+      const created = await request(app)
+        .post('/api/recipes')
+        .set('Authorization', `Bearer ${token}`)
+        .send(validRecipe);
+      const recipeId = created.body.recipe.id ?? created.body.recipe._id;
+      expect(created.body.recipe.tags).not.toContain('needs-review');
+
+      mockedVerify.mockResolvedValueOnce(needsReviewResult);
+      const updated = await request(app)
+        .patch(`/api/recipes/${recipeId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Chicken Garlic Butter Pasta' });
+
+      expect(updated.status).toBe(200);
+      expect(updated.body.recipe.tags).toContain('needs-review');
     });
   });
 });

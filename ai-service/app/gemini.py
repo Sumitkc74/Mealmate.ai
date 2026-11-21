@@ -511,3 +511,18 @@ def parse_json(text: str) -> Any | None:
             return json.loads(match.group(1))
         except json.JSONDecodeError:
             return None
+
+
+def generate_json(prompt: str) -> Any | None:
+    """Generate a JSON object from a prompt, parsed from the model's reply.
+
+    Wraps :func:`generate_text` (JSON mode) with :func:`parse_json`.
+    Added because the recipe verifier and nutrition estimation call this
+    name; without it the AI verification path raised AttributeError and
+    silently fell back to deterministic rules, so the LLM coherence
+    checks never ran.
+    """
+    text = generate_text(prompt, json_mode=True)
+    if text is None:
+        return None
+    return parse_json(text)

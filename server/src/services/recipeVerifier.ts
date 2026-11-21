@@ -308,6 +308,29 @@ export async function verifyRecipe(recipe: VerifyRecipeInput): Promise<VerifyRec
 }
 
 /**
+ * Tag applied to recipes published without a full verification pass, so
+ * other users can see the recipe was published anyway. The tag always
+ * reflects the latest verification verdict: added on 'needs_review',
+ * removed on 'verified'. Applied server-side so it cannot be bypassed
+ * through the API.
+ */
+export const NEEDS_REVIEW_TAG = 'needs-review';
+
+export function applyVerificationTag(
+  tags: string[] | undefined,
+  verdict: string | undefined,
+): string[] {
+  const next = [...(tags ?? [])];
+  const idx = next.indexOf(NEEDS_REVIEW_TAG);
+  if (verdict === 'needs_review') {
+    if (idx === -1) next.push(NEEDS_REVIEW_TAG);
+  } else if (verdict === 'verified') {
+    if (idx !== -1) next.splice(idx, 1);
+  }
+  return next;
+}
+
+/**
  * Assert that a recipe meets safety requirements before persisting to DB.
  * Throws AppError.badRequest if verification fails.
  */
