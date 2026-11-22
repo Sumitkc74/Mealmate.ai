@@ -238,6 +238,11 @@ export async function streamAssistantChat(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  // The server is supposed to end every stream with a `done` event. If the
+  // stream instead closes early (e.g. the AI service failed after the SSE
+  // headers were sent), nothing would call onDone and the UI would sit on
+  // "Assistant is typing" forever — so track it and surface an error.
+  let sawDone = false;
 
   try {
     // Read the SSE stream until the reader reports done. `streamDone` is
@@ -259,12 +264,16 @@ export async function streamAssistantChat(
           if (payload.type === 'token' && typeof payload.chunk === 'string') {
             callbacks.onToken(payload.chunk);
           } else if (payload.type === 'done') {
+            sawDone = true;
             callbacks.onDone(payload as ChatResponse);
           }
         } catch {
           // ignore malformed chunk
         }
       }
+    }
+    if (!sawDone) {
+      callbacks.onError(new Error('Chat stream ended without a reply'));
     }
   } catch (err) {
     callbacks.onError(err);

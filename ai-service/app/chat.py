@@ -432,56 +432,77 @@ def stream_reply(req: ChatRequest) -> Iterator[str]:
     accumulated_full: list[str] = []
     accumulated_reply: list[str] = []
 
-    for chunk in stream:
-        accumulated_full.append(chunk)
-        buffer += chunk
+    stream_error_reply: str | None = None
+    try:
+        for chunk in stream:
+            accumulated_full.append(chunk)
+            buffer += chunk
 
-        if not in_reply:
-            idx = buffer.find('"reply":')
-            if idx != -1:
-                q_idx = buffer.find('"', idx + 8)
-                if q_idx != -1:
+            if not in_reply:
+                idx = buffer.find('"reply":')
+                if idx != -1:
+                    q_idx = buffer.find('"', idx + 8)
+                    if q_idx != -1:
+                        in_reply = True
+                        buffer = buffer[q_idx + 1:]
+                elif len(buffer) > 20 and not buffer.strip().startswith("{"):
                     in_reply = True
-                    buffer = buffer[q_idx + 1:]
-            elif len(buffer) > 20 and not buffer.strip().startswith("{"):
-                in_reply = True
 
-        if in_reply and not finished_reply:
-            out_chars: list[str] = []
-            i = 0
-            while i < len(buffer):
-                if buffer[i] == "\\" and i + 1 < len(buffer):
-                    if buffer[i + 1] == '"':
-                        out_chars.append('"')
-                        i += 2
-                        continue
-                    elif buffer[i + 1] == "n":
-                        out_chars.append("\n")
-                        i += 2
-                        continue
-                    elif buffer[i + 1] == "t":
-                        out_chars.append("\t")
-                        i += 2
-                        continue
+            if in_reply and not finished_reply:
+                out_chars: list[str] = []
+                i = 0
+                while i < len(buffer):
+                    if buffer[i] == "\\" and i + 1 < len(buffer):
+                        if buffer[i + 1] == '"':
+                            out_chars.append('"')
+                            i += 2
+                            continue
+                        elif buffer[i + 1] == "n":
+                            out_chars.append("\n")
+                            i += 2
+                            continue
+                        elif buffer[i + 1] == "t":
+                            out_chars.append("\t")
+                            i += 2
+                            continue
+                        else:
+                            out_chars.append(buffer[i : i + 2])
+                            i += 2
+                            continue
+                    elif buffer[i] == '"' and ('"actions"' in "".join(accumulated_full) or buffer.startswith("{")):
+                        finished_reply = True
+                        buffer = buffer[i + 1:]
+                        break
                     else:
-                        out_chars.append(buffer[i : i + 2])
-                        i += 2
-                        continue
-                elif buffer[i] == '"' and ('"actions"' in "".join(accumulated_full) or buffer.startswith("{")):
-                    finished_reply = True
-                    buffer = buffer[i + 1:]
-                    break
-                else:
-                    out_chars.append(buffer[i])
-                    i += 1
+                        out_chars.append(buffer[i])
+                        i += 1
 
-            chunk_text = "".join(out_chars)
-            if chunk_text:
-                accumulated_reply.append(chunk_text)
-                yield f"data: {json.dumps({'type': 'token', 'chunk': chunk_text})}\n\n"
-            if not finished_reply:
-                buffer = ""
+                chunk_text = "".join(out_chars)
+                if chunk_text:
+                    accumulated_reply.append(chunk_text)
+                    yield f"data: {json.dumps({'type': 'token', 'chunk': chunk_text})}\n\n"
+                if not finished_reply:
+                    buffer = ""
 
+    except gemini.GeminiQuotaError as quota_exc:
+        stream_error_reply = _quota_error_reply(req, quota_exc)
+    except gemini.GeminiModelError as model_exc:
+        stream_error_reply = _model_unavailable_reply(req, model_exc)
+    if stream_error_reply is not None:
+        # The model failed mid-stream (e.g. quota hit while the
+        # SDK was retrying): discard any partial reply and end the
+        # stream with the honest message, so the client always gets
+        # a done event instead of hanging on "typing" forever.
+        yield f"data: {json.dumps({'type': 'token', 'chunk': stream_error_reply})}\n\n"
+        done_payload = {
+            "type": "done",
+            "reply": stream_error_reply,
+            "strategy": "fallback",
+            "suggestions": [s.model_dump() for s in _DEFAULT_SUGGESTIONS],
+            "actions": [],
+        }
+        yield f"data: {json.dumps(done_payload)}\n\n"
+        return
     full_text = "".join(accumulated_full).strip()
     if not full_text:
         reply_txt = _model_error_reply(req)

@@ -230,6 +230,47 @@ def test_chat_stream_uses_gemini_when_available(monkeypatch):
     assert "rice bowl" in done_ev["reply"].lower()
 
 
+def test_chat_stream_reports_quota_error_instead_of_hanging(monkeypatch):
+    """A quota error raised while iterating the stream must end the SSE
+    stream with the honest quota message, not kill it silently.
+
+    Regression test for the live failure (Nov 21, 2026): a 429 during the
+    streamed chat made /chat/stream close with no events, so the client sat
+    on "Assistant is typing" forever. The error surfaces when the generator
+    is iterated, not when it is created — which is why the old code missed it.
+    """
+    import json
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key-123")
+    monkeypatch.setattr(chat_service.gemini, "is_available", lambda: True)
+
+    def fake_stream_raises_quota(*args, **kwargs):
+        yield '{"reply": "'
+        raise chat_service.gemini.GeminiQuotaError(
+            "429 Quota exceeded for model", model="models/gemini-3.8-flash", retry_after=120
+        )
+
+    monkeypatch.setattr(chat_service.gemini, "generate_chat_stream", fake_stream_raises_quota)
+
+    client = TestClient(app)
+    resp = client.post(
+        "/chat/stream",
+        json={
+            "messages": [{"role": "user", "content": "What can I make with tomato?"}],
+            "pantry": [],
+            "dietary_preferences": [],
+            "allergies": [],
+        },
+    )
+    assert resp.status_code == 200
+    text = resp.text
+    lines = [line[6:] for line in text.splitlines() if line.startswith("data: ")]
+    events = [json.loads(l) for l in lines]
+    done_ev = next(e for e in events if e.get("type") == "done")
+    assert done_ev["strategy"] == "fallback"
+    assert "quota" in done_ev["reply"].lower()
+    assert "came back empty" not in done_ev["reply"]
+
+
 def test_wikipedia_image_cached_with_httpx(monkeypatch):
     from app import recipe_gen
     from app.cache import get_cache
