@@ -303,7 +303,27 @@ export async function verifyRecipe(recipe: VerifyRecipeInput): Promise<VerifyRec
     return await verifyRecipeWithAiService(recipe);
   } catch (err) {
     logger.warn({ err }, 'AI verification service unavailable, using deterministic verification');
-    return deterministic;
+    // Fail safe, not fail open: the deterministic rules alone cannot check
+    // title-vs-ingredients coherence (the "Chicken Biryani" case), so a
+    // recipe verified only by them must never read as fully verified. Cap
+    // the verdict at needs_review and flag the missing AI check, so the
+    // recipe gets the needs-review tag instead of publishing unchecked.
+    return {
+      ...deterministic,
+      score: Math.min(deterministic.score, 69),
+      verdict: 'needs_review',
+      summary:
+        'AI verification was unavailable, so title/ingredient coherence was not checked. Review before sharing.',
+      issues: [
+        ...deterministic.issues,
+        {
+          severity: 'warning',
+          category: 'coherence',
+          message:
+            'AI verification was unavailable, so title/ingredient coherence was not checked.',
+        },
+      ],
+    };
   }
 }
 

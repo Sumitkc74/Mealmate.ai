@@ -38,7 +38,10 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
 
   if (statusCode >= 500) {
     logger.error({ err, path: req.originalUrl, method: req.method }, 'Unhandled error');
-    if (env.NODE_ENV === 'production') {
+    // Operational AppErrors carry a deliberate user-facing message (e.g. the
+    // 503 "Password reset is not available right now"). Keep it. Only
+    // unexpected errors get the generic message in production.
+    if (!(err instanceof AppError) && env.NODE_ENV === 'production') {
       message = 'Internal server error';
     }
   } else {

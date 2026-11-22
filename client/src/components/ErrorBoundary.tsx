@@ -16,10 +16,32 @@ interface State {
  * Async errors (fetch failures etc.) are handled per-component via TanStack
  * Query's `isError` state - this boundary is for genuine render crashes.
  */
+const CHUNK_RELOAD_KEY = 'mealmate-chunk-reload';
+
+/**
+ * A lazy route chunk that no longer exists on the server — happens after a
+ * deploy, when the service worker (or a cached shell) still references the
+ * previous build's chunk hashes. The fix is to load the new build, not to
+ * show an error screen.
+ */
+function isChunkLoadError(error: Error): boolean {
+  return (
+    error.name === 'ChunkLoadError' ||
+    /Failed to fetch dynamically imported module/i.test(error.message) ||
+    /Loading chunk [\w-]+ failed/i.test(error.message)
+  );
+}
+
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null };
 
   static getDerivedStateFromError(error: Error): State {
+    // For a stale-chunk failure we reload (once) instead of showing the
+    // error screen — unless we already reloaded and it still fails, in
+    // which case the error UI is the honest outcome.
+    if (isChunkLoadError(error) && !sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
+      return { error: null };
+    }
     return { error };
   }
 
@@ -27,6 +49,10 @@ export class ErrorBoundary extends Component<Props, State> {
     // Surface to the console for dev; in production this is where a Sentry
     // (or similar) hook would go.
     console.error('Unhandled render error:', error, info.componentStack);
+    if (isChunkLoadError(error) && !sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
+      sessionStorage.setItem(CHUNK_RELOAD_KEY, '1');
+      window.location.reload();
+    }
   }
 
   private handleReset = (): void => {

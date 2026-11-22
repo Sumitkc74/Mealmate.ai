@@ -185,6 +185,32 @@ export function PlannerPage() {
     return map;
   }, [plan]);
 
+  /**
+   * The plan to export as PDF. Prefer the saved plan (it holds every
+   * manually assigned meal, not just AI-generated ones); fall back to the
+   * last AI response (e.g. for guests, who have no saved plan). Export was
+   * previously wired only to the AI response, so it stayed disabled after
+   * a manual assignment.
+   */
+  const planToExport = useMemo<MealPlanResponse | null>(() => {
+    if (plan) {
+      const days = plan.days
+        .map((d) => ({
+          day: d.day,
+          meals: SLOTS.flatMap((slot) => {
+            const r = recipeFromSlot(d[slot]);
+            if (!r) return [];
+            return [{ slot, recipe_id: r.id, title: r.title, tags: r.tags ?? [] }];
+          }),
+        }))
+        .filter((d) => d.meals.length > 0);
+      if (days.length > 0) {
+        return { success: true, strategy: 'heuristic', days };
+      }
+    }
+    return lastAiResponse;
+  }, [plan, lastAiResponse]);
+
   return (
     <DndProvider backend={HTML5Backend}>
       <div className="space-y-6">
@@ -359,9 +385,9 @@ export function PlannerPage() {
                     </p>
                   )}
                   <ExportPlanPdfButton
-                    plan={lastAiResponse}
+                    plan={planToExport}
                     weekLabel={formatWeekRange(weekStart)}
-                    disabled={!lastAiResponse}
+                    disabled={!planToExport}
                   />
                   <Button
                     onClick={handleGenerateGrocery}

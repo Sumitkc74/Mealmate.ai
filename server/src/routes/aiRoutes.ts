@@ -139,9 +139,11 @@ router.post(
         });
         return;
       }
-      // Guests have no pantry, so pantry comparison would score every recipe 0.
-      // Show them the popular starters instead.
-      if (!req.user && ings.length === 0 && !hasPrefs && !hasLikes) {
+      // No pantry, preferences, or likes — pantry comparison would score
+      // every recipe low (guests have no pantry; a signed-in user with an
+      // empty pantry is in the same boat). Show the popular starters
+      // instead, matching the non-database branch below.
+      if (ings.length === 0 && !hasPrefs && !hasLikes) {
         const starters = starterResults(dbRecipes, top_k);
         res.json({
           success: true,

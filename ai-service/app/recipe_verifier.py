@@ -353,7 +353,17 @@ def deterministic_verify(req: VerifyRecipeRequest) -> VerifyRecipeResponse:
         suggestions.append(f"Contains common allergens: {', '.join(detected_allergens)}. Clear labeling helps diners with sensitivities.")
 
     if len(req.ingredients) < 3 and len(req.ingredients) > 0:
-        suggestions.append("Consider adding seasoning or herbs (e.g., salt, pepper, olive oil) to enhance depth of flavor.")
+        # Only suggest seasoning when none is already present — the recipe
+        # may already name salt/pepper/oil in its ingredients or in a step
+        # ("season with salt"), in which case the suggestion is noise.
+        haystack = " ".join(
+            [str(i.get("name", "")) for i in req.ingredients] + list(req.instructions)
+        ).lower()
+        if not any(
+            word in haystack
+            for word in ("salt", "pepper", "olive oil", "herb", "seasoning")
+        ):
+            suggestions.append("Consider adding seasoning or herbs (e.g., salt, pepper, olive oil) to enhance depth of flavor.")
 
     score = max(0, min(100, score))
     has_errors = any(i.severity == "error" for i in issues)

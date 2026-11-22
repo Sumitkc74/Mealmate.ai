@@ -61,6 +61,11 @@ afterAll(async () => {
 describe('Recipe Verification and Safety Guardrails', () => {
   describe('POST /api/recipes/verify', () => {
     it('verifies a culinary-sound recipe and detects allergens', async () => {
+      // No AI service runs in the test env, so verification falls back to
+      // deterministic rules. Fail-safe: the fallback caps the verdict at
+      // needs_review (the AI coherence check did not run), so the score is
+      // 69 and the recipe carries the AI-unavailable warning — it is not
+      // silently marked fully verified.
       const res = await request(app)
         .post('/api/recipes/verify')
         .set('Authorization', `Bearer ${token}`)
@@ -69,8 +74,16 @@ describe('Recipe Verification and Safety Guardrails', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.is_valid).toBe(true);
-      expect(res.body.score).toBeGreaterThanOrEqual(70);
-      expect(res.body.verdict).toBe('verified');
+      expect(res.body.score).toBe(69);
+      expect(res.body.verdict).toBe('needs_review');
+      expect(res.body.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            category: 'coherence',
+            message: expect.stringContaining('AI verification was unavailable'),
+          }),
+        ])
+      );
       expect(res.body.detected_allergens).toContain('dairy');
       expect(res.body.detected_allergens).toContain('gluten');
     });
