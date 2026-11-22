@@ -276,7 +276,7 @@ def _model_unavailable_reply(req: ChatRequest, exc: gemini.GeminiModelError) -> 
         "or was never valid for this API version.",
         "This isn't something rephrasing can fix; the app needs to be "
         "updated to a currently supported model (for example "
-        "`gemini-3.8-flash`).",
+        "`gemini-3.5-flash-lite`).",
         "Meanwhile you can still browse recipes, edit the planner manually, "
         "and generate grocery lists — those features don't need the AI.",
     ]

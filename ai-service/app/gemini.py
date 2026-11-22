@@ -22,12 +22,16 @@ from typing import Any, Iterator
 from .cache import get_cache, make_key
 from .metrics import record_llm_call
 
-# Current free-tier Flash default (Nov 2026). `gemini-1.5-flash` was retired by
+# Free-tier Flash-Lite default (Nov 2026). `gemini-1.5-flash` was retired by
 # Google and shut down on the Gemini API on 2025-09-29, so every call to it
 # now fails fast with a 404 — which the old code surfaced as a misleading
-# "came back empty" chat reply. Override with GEMINI_MODEL to pin another
-# supported model (e.g. gemini-2.5-flash, gemini-3.5-flash-lite).
-DEFAULT_MODEL = "models/gemini-3.8-flash"
+# "came back empty" chat reply. `gemini-3.8-flash` (the previous default)
+# works but its free tier is only 5 RPM / 20 requests a day, which the app
+# exhausts by evening — the SDK then retries 429s for minutes and the chat
+# crawls. `gemini-3.5-flash-lite` is 15 RPM / 500 requests a day (25x the
+# daily allowance) on the same free tier, so the chat stays fast. Override
+# with GEMINI_MODEL to pin another supported model.
+DEFAULT_MODEL = "models/gemini-3.5-flash-lite"
 
 _logger = logging.getLogger(__name__)
 

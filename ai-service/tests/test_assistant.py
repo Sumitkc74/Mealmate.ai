@@ -246,7 +246,7 @@ def test_chat_stream_reports_quota_error_instead_of_hanging(monkeypatch):
     def fake_stream_raises_quota(*args, **kwargs):
         yield '{"reply": "'
         raise chat_service.gemini.GeminiQuotaError(
-            "429 Quota exceeded for model", model="models/gemini-3.8-flash", retry_after=120
+            "429 Quota exceeded for model", model="models/gemini-3.5-flash-lite", retry_after=120
         )
 
     monkeypatch.setattr(chat_service.gemini, "generate_chat_stream", fake_stream_raises_quota)

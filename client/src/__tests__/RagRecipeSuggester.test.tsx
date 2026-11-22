@@ -44,7 +44,7 @@ describe('RagRecipeSuggester', () => {
         return Promise.resolve({
           data: {
             success: true,
-            llm: { provider: 'gemini', model: 'gemini-3.8-flash', available: true },
+            llm: { provider: 'gemini', model: 'gemini-3.5-flash-lite', available: true },
             features: { recommend: true, similar: true, plan_week: true, chat: true, pantry_parse: true },
           },
         });
