@@ -63,6 +63,37 @@ def test_chat_uses_gemini_when_available(monkeypatch):
     assert len(captured["history"]) == 2  # type: ignore[arg-type]
 
 
+def test_chat_reports_retired_model_honestly(monkeypatch):
+    """A 404 for a retired model id must not surface as 'came back empty'.
+
+    Regression test for the live failure where gemini-1.5-flash (retired
+    2025-09-29) made every chat reply claim the model "came back empty"
+    and tell the user to rephrase, when the real cause was the dead model.
+    """
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key-123")
+
+    def fake_chat_raises_model_error(*, system, history, user_message, **kwargs):
+        raise chat_service.gemini.GeminiModelError(
+            "404 models/gemini-1.5-flash is not found for API version v1beta",
+            model="models/gemini-1.5-flash",
+        )
+
+    monkeypatch.setattr(chat_service.gemini, "is_available", lambda: True)
+    monkeypatch.setattr(chat_service.gemini, "generate_chat", fake_chat_raises_model_error)
+
+    req = ChatRequest(
+        messages=[ChatMessage(role="user", content="What can I make with tomato?")],
+        pantry=[],
+        dietary_preferences=[],
+        allergies=[],
+    )
+    resp = chat_service.reply(req)
+    assert resp.strategy == "fallback"
+    assert "gemini-1.5-flash" in resp.reply
+    assert "no longer available" in resp.reply
+    assert "came back empty" not in resp.reply
+
+
 def test_pantry_parser_heuristic_basic(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     result = pantry_parser.parse(

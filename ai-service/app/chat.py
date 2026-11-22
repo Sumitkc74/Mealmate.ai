@@ -260,6 +260,31 @@ def _quota_error_reply(req: ChatRequest, exc: gemini.GeminiQuotaError) -> str:
     return " ".join(bits)
 
 
+def _model_unavailable_reply(req: ChatRequest, exc: gemini.GeminiModelError) -> str:
+    """Honest message when the configured Gemini model no longer exists.
+
+    Google retires model ids (e.g. ``gemini-1.5-flash`` was shut down on
+    2025-09-29); the API then answers every call with a 404. That is a
+    configuration problem, not a failure of the user's wording — so say so,
+    and point at the fix (a supported model id) instead of suggesting a
+    rephrase.
+    """
+    last = req.messages[-1].content if req.messages else ""
+    bits = [
+        "The AI assistant is unavailable because the configured AI model "
+        f"`{exc.model}` is no longer available from Google — it was retired "
+        "or was never valid for this API version.",
+        "This isn't something rephrasing can fix; the app needs to be "
+        "updated to a currently supported model (for example "
+        "`gemini-3.8-flash`).",
+        "Meanwhile you can still browse recipes, edit the planner manually, "
+        "and generate grocery lists — those features don't need the AI.",
+    ]
+    if last:
+        bits.append(f"(Your message: \"{last[:140]}\")")
+    return " ".join(bits)
+
+
 def _coerce_actions(raw: Any) -> list[ChatAction]:
     """Best-effort: turn whatever the LLM gave us into validated ChatAction objects."""
     if not isinstance(raw, list):
@@ -309,6 +334,14 @@ def reply(req: ChatRequest) -> ChatResponse:
         # upstream billing limit.
         return ChatResponse(
             reply=_quota_error_reply(req, quota_exc),
+            strategy="fallback",
+            suggestions=_DEFAULT_SUGGESTIONS,
+        )
+    except gemini.GeminiModelError as model_exc:
+        # Configured model retired / unknown (API 404). Not a wording
+        # problem, so do not fall through to the "came back empty" message.
+        return ChatResponse(
+            reply=_model_unavailable_reply(req, model_exc),
             strategy="fallback",
             suggestions=_DEFAULT_SUGGESTIONS,
         )

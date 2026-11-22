@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/Button';
 import { api, extractErrorMessage } from '@/lib/api';
@@ -43,12 +44,29 @@ export function RagRecipeSuggester({ pantry, dietaryPreferences, allergies }: Pr
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  // True once a suggest call has been pending long enough that the
+  // AI service is probably waking from a free-tier cold start, so the
+  // UI can say so instead of spinning silently.
+  const [wakingUp, setWakingUp] = useState(false);
 
   const hasPantry = pantry.length > 0;
 
   const aiStatus = useAiStatus();
-  const { data: savedRecipesData } = useRecipes({ limit: 200 });
+  // Server caps `limit` at 100; asking for 200 fails with a 400 and wastes
+  // a retried request on every pantry load.
+  const { data: savedRecipesData } = useRecipes({ limit: 100 });
   const [filterQuery, setFilterQuery] = useState('');
+
+  // Suggestions are computed from the pantry: once the last item is
+  // removed they are stale, so clear the panel instead of leaving the
+  // old matches and AI text on screen.
+  useEffect(() => {
+    if (pantry.length === 0) {
+      setResult(null);
+      setExpanded(false);
+      setError(null);
+    }
+  }, [pantry.length]);
 
   const filteredRecipes = useMemo(() => {
     const q = filterQuery.toLowerCase();
@@ -65,12 +83,19 @@ export function RagRecipeSuggester({ pantry, dietaryPreferences, allergies }: Pr
   async function handleSuggest() {
     setError(null);
     setLoading(true);
+    setWakingUp(false);
     setResult(null);
     setExpanded(true);
+    // If the AI service is asleep (free tier spins down after 15 min idle),
+    // the first call wakes it and takes ~45s; say so after 5s of waiting.
+    const wakeTimer = setTimeout(() => setWakingUp(true), 5000);
     try {
       // Routed through the shared api client (baseURL = VITE_API_URL) so this
       // works in production: a relative /api path only works behind Vite's
       // dev/preview proxy and returns the SPA HTML on Vercel.
+      // 60s timeout: the server waits 60s too, so a single call rides out
+      // the AI-service cold start instead of timing out at 30s and forcing
+      // the user to click again.
       const res = await api.post<RAGResult>(
         '/ai/rag/suggest',
         {
@@ -79,13 +104,15 @@ export function RagRecipeSuggester({ pantry, dietaryPreferences, allergies }: Pr
           allergies,
           top_k: 5,
         },
-        { timeout: 30_000 },
+        { timeout: 60_000 },
       );
       const data: RAGResult = res.data;
       setResult(data);
     } catch (err) {
       setError(extractErrorMessage(err, 'Could not fetch suggestions - try again'));
     } finally {
+      clearTimeout(wakeTimer);
+      setWakingUp(false);
       setLoading(false);
     }
   }
@@ -212,7 +239,7 @@ export function RagRecipeSuggester({ pantry, dietaryPreferences, allergies }: Pr
             {loading && (
               <div className="flex items-center gap-2 text-sm text-violet-700">
                 <span className="animate-spin">⟳</span>
-                Searching recipes semantically…
+                {wakingUp ? 'Waking up the AI service…' : 'Searching recipes semantically…'}
               </div>
             )}
 
@@ -228,9 +255,12 @@ export function RagRecipeSuggester({ pantry, dietaryPreferences, allergies }: Pr
                     <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-violet-600">
                       AI Suggestion
                     </p>
-                    <p className="whitespace-pre-line leading-relaxed">
-                      {result.suggestion}
-                    </p>
+                    {/* Rendered as markdown: the AI text uses **bold** and
+                        newlines, which showed up as literal ** when rendered
+                        as plain text. */}
+                    <div className="whitespace-pre-line leading-relaxed [&_p]:mb-2 [&_p:last-child]:mb-0">
+                      <ReactMarkdown>{result.suggestion}</ReactMarkdown>
+                    </div>
                   </motion.div>
                 )}
 

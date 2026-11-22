@@ -22,7 +22,12 @@ from typing import Any, Iterator
 from .cache import get_cache, make_key
 from .metrics import record_llm_call
 
-DEFAULT_MODEL = "models/gemini-1.5-flash"
+# Current free-tier Flash default (Nov 2026). `gemini-1.5-flash` was retired by
+# Google and shut down on the Gemini API on 2025-09-29, so every call to it
+# now fails fast with a 404 — which the old code surfaced as a misleading
+# "came back empty" chat reply. Override with GEMINI_MODEL to pin another
+# supported model (e.g. gemini-2.5-flash, gemini-3.5-flash-lite).
+DEFAULT_MODEL = "models/gemini-3.8-flash"
 
 _logger = logging.getLogger(__name__)
 
@@ -40,6 +45,41 @@ class GeminiQuotaError(RuntimeError):
         super().__init__(message)
         self.model = model
         self.retry_after = retry_after
+
+
+class GeminiModelError(RuntimeError):
+    """Raised when the configured Gemini model is not available (HTTP 404).
+
+    This is a configuration error, not a transient failure: the model id was
+    retired or was never valid for this API version, so no amount of
+    rephrasing or retrying will help. Callers should surface an honest
+    "model unavailable" message instead of the generic "came back empty"
+    fallback, which blames the user's wording for a server-side problem.
+    """
+
+    def __init__(self, message: str, *, model: str) -> None:
+        super().__init__(message)
+        self.model = model
+
+
+def _maybe_model_error(exc: BaseException, model: str) -> GeminiModelError | None:
+    """Detect a 404 / model-not-found from the Gemini SDK and convert it.
+
+    The SDK raises ``google.api_core.exceptions.NotFound`` (or a plain
+    ``ClientError`` whose message contains ``404`` / ``not found``) when the
+    requested model id no longer exists — e.g. after Google retires it.
+    """
+    name = type(exc).__name__
+    msg = str(exc)
+    is_model_error = (
+        name == "NotFound"
+        or "404" in msg
+        or "not found" in msg.lower()
+        or "is not supported for generatecontent" in msg.lower()
+    )
+    if not is_model_error:
+        return None
+    return GeminiModelError(msg.split("\n", 1)[0], model=model)
 
 
 def _maybe_quota_error(exc: BaseException, model: str) -> GeminiQuotaError | None:
@@ -321,6 +361,19 @@ def generate_chat(
             )
             record_llm_call("chat", "quota_exceeded")
             raise quota from exc
+
+        model_err = _maybe_model_error(exc, _model_name())
+        if model_err is not None:
+            # Retired / unknown model id: retrying or rephrasing cannot fix
+            # this, so surface it as a configuration error rather than the
+            # generic "came back empty" fallback.
+            _logger.warning(
+                "gemini.generate_chat model unavailable (%s): %s",
+                model_err.model,
+                model_err,
+            )
+            record_llm_call("chat", "model_not_found")
+            raise model_err from exc
 
         _logger.warning(
             "gemini.generate_chat failed: %s: %s",

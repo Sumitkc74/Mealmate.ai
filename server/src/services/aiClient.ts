@@ -469,7 +469,7 @@ export async function ragSuggest(payload: {
     const { data } = await getClient().post<RAGSuggestResponse>(
       '/rag/suggest',
       payload,
-      { timeout: 30_000 }
+      { timeout: 60_000 } // long enough to ride out an AI-service cold start (~45s on the free tier)
     );
     return data;
   } catch (err) {
