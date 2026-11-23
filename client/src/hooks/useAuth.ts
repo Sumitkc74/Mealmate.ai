@@ -75,14 +75,16 @@ export function useResetPassword() {
 }
 
 export function useMe() {
-  const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   return useQuery({
     queryKey: ['me'],
-    // Re-validate the session whenever a user is persisted (page reload):
-    // the cookie is sent automatically, and a 401 clears auth via the api
-    // interceptor.
-    enabled: Boolean(user),
+    // Always re-validate the session on app load: the httpOnly cookie is
+    // sent automatically, and a 200 restores the user even when local state
+    // was cleared (e.g. by a transient 401). A 401 just means guest — the
+    // api interceptor only clears local state, it never deletes the cookie,
+    // so a later reload can still restore the session. No retry: a guest's
+    // 401 is the expected answer, not a failure worth repeating.
+    retry: false,
     queryFn: async (): Promise<User> => {
       const { data } = await api.get<{ user: User }>('/auth/me');
       setUser(data.user);

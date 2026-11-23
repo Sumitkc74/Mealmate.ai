@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ProtectedRoute, PublicOnlyRoute } from '@/components/routing/ProtectedRoute';
+import { useMe } from '@/hooks/useAuth';
 
 // Route-level code splitting for performance and bundle size optimization
 const HomePage = lazy(() => import('@/pages/HomePage').then((m) => ({ default: m.HomePage })));
@@ -36,6 +37,11 @@ function RouteFallback() {
 }
 
 export default function App() {
+  // Restore the session from the httpOnly cookie on every app load. Without
+  // this, a cleared local user (e.g. after a transient 401) never comes
+  // back, because useMe previously only ran on protected routes and only
+  // when a user was already present.
+  useMe();
   return (
     <Suspense fallback={<RouteFallback />}>
       <Routes>
