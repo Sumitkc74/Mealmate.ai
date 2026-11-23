@@ -28,10 +28,30 @@ function unauthorizedAdapter(url: string, method: string): AxiosAdapter {
 
 describe('api 401 interceptor', () => {
   beforeEach(() => {
-    useAuthStore.setState({ user: testUser });
+    useAuthStore.setState({ user: testUser, authedAt: null });
   });
 
   it('logs out on a 401 from the session check (GET /auth/me)', async () => {
+    await expect(
+      api.get('/auth/me', { adapter: unauthorizedAdapter('/auth/me', 'get') })
+    ).rejects.toBeDefined();
+    expect(useAuthStore.getState().user).toBeNull();
+  });
+
+  it('does not log out on a 401 from the session check within the post-auth grace window', async () => {
+    // A login/register just proved the session valid (the server set the
+    // cookie and returned the user), so a 401 from the immediate post-auth
+    // /me validation is transient (cookie/proxy timing, cold Render) —
+    // it must not destroy the session that was just established.
+    useAuthStore.getState().setAuth({ user: testUser });
+    await expect(
+      api.get('/auth/me', { adapter: unauthorizedAdapter('/auth/me', 'get') })
+    ).rejects.toBeDefined();
+    expect(useAuthStore.getState().user).toEqual(testUser);
+  });
+
+  it('logs out on a 401 from the session check after the post-auth grace window', async () => {
+    useAuthStore.setState({ user: testUser, authedAt: Date.now() - 30_000 });
     await expect(
       api.get('/auth/me', { adapter: unauthorizedAdapter('/auth/me', 'get') })
     ).rejects.toBeDefined();

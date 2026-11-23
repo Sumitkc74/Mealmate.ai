@@ -37,9 +37,12 @@ export function Navbar() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [mobileMenuOpen]);
 
-  function handleLogout() {
+  async function handleLogout() {
     setMobileMenuOpen(false);
-    logout();
+    // Await the logout (it clears the server cookie first) before
+    // navigating, so the login page does not see a stale signed-in user
+    // and bounce back.
+    await logout();
     navigate('/login', { replace: true });
   }
 

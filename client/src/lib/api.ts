@@ -62,14 +62,26 @@ function isSessionCheck(error: AxiosError): boolean {
   return method === 'get' && (path === '/auth/me' || path.endsWith('/auth/me'));
 }
 
+// Grace period after a successful login/register: the server just proved
+// the session valid (it set the cookie and returned the user), so a 401
+// from the immediate post-auth /me validation is transient — cookie/proxy
+// timing or a cold Render — not a dead session. Logging out on it destroys
+// a session that was just established (seen live: registration drops the
+// session on first navigation while sign-in works). The window covers the
+// 15s axios timeout, so even a slow validation response is protected.
+// After the window, a 401 is treated as a real session failure again.
+const POST_AUTH_GRACE_MS = 20_000;
+
 // Auto-logout on a 401 from the session check, and surface a friendly message.
 api.interceptors.response.use(
   (res) => res,
   (error: AxiosError<{ message?: string }>) => {
     if (error.response?.status === 401 && isSessionCheck(error)) {
-      const { user, logout } = useAuthStore.getState();
-      // Only force logout if we actually had a user (not for failed login attempts).
-      if (user) logout();
+      const { user, logout, authedAt } = useAuthStore.getState();
+      const inGrace = authedAt !== null && Date.now() - authedAt < POST_AUTH_GRACE_MS;
+      // Only force logout if we actually had a user (not for failed login attempts),
+      // and not within the post-auth grace window.
+      if (user && !inGrace) logout();
     }
     return Promise.reject(error);
   }

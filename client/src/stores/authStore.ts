@@ -11,6 +11,16 @@ import type { User } from '@/types';
  */
 interface AuthState {
   user: User | null;
+  /**
+   * Timestamp (ms) of the last successful login/register. The api 401
+   * interceptor uses it to avoid destroying a just-established session on
+   * a transient 401 from the immediate post-auth /me validation (cookie /
+   * proxy timing, cold Render): the server just proved the session valid
+   * by setting the cookie and returning the user, so a 401 in the first
+   * seconds after auth cannot mean the session is dead. Not persisted —
+   * the grace only applies within the page session that just authed.
+   */
+  authedAt: number | null;
   setAuth: (payload: { user: User }) => void;
   setUser: (user: User) => void;
   logout: () => void;
@@ -20,9 +30,10 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       user: null,
-      setAuth: ({ user }) => set({ user }),
+      authedAt: null,
+      setAuth: ({ user }) => set({ user, authedAt: Date.now() }),
       setUser: (user) => set({ user }),
-      logout: () => set({ user: null }),
+      logout: () => set({ user: null, authedAt: null }),
     }),
     {
       name: 'mealmate.auth',

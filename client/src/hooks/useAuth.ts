@@ -97,10 +97,20 @@ export function useMe() {
 export function useLogout() {
   const logout = useAuthStore((s) => s.logout);
   const queryClient = useQueryClient();
-  return () => {
-    // Clear the server-side httpOnly cookie too (fire-and-forget: local
-    // state is cleared regardless).
-    void api.post('/auth/logout').catch(() => undefined);
+  return async () => {
+    // Await the server logout (which clears the httpOnly cookie) BEFORE
+    // clearing local state and the query cache. Previously the POST was
+    // fire-and-forget, so the useMe refetch triggered by queryClient.clear()
+    // could run while the cookie was still valid, and a 200 would restore
+    // the user right after sign-out (seen live: an SPA navigation after
+    // sign-out resurrected the session; a second sign-out + full load was
+    // needed to show the guest state).
+    try {
+      await api.post('/auth/logout');
+    } catch {
+      // Local state is cleared regardless: a failed logout call must not
+      // leave the user stuck signed in.
+    }
     logout();
     queryClient.clear();
   };
