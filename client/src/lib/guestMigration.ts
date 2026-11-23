@@ -6,10 +6,14 @@ import type { MealPlan, Recipe, User } from '@/types';
 import type { RecipeInput } from '@/hooks/useRecipes';
 
 /**
- * Migrate local guest data to the signed-in account, then clear the guest
- * store. Best-effort per item: one failure never blocks the rest or breaks
- * sign-in, and the store is cleared even on partial failure so a later
- * sign-in can't re-post the same items.
+ * Migrate local guest data to the signed-in account, then remove the items
+ * that were actually migrated from the guest store. Best-effort per item:
+ * one failure never blocks the rest or breaks sign-in. Only migrated items
+ * are removed — a failed item stays in the browser so a later sign-in can
+ * retry it, and if the session is not actually working (the check below
+ * fails) nothing is touched at all. The old behaviour cleared everything
+ * even when every call failed, which wiped a guest's data on a broken
+ * sign-in.
  *
  * Order matters: recipes first (plans reference them by id), then plans
  * (grocery lists are regenerated from the migrated plans), pantry last
@@ -82,8 +86,31 @@ async function migrateOnce(qc?: QueryClient): Promise<GuestMigrationResult> {
     return { ...EMPTY_RESULT };
   }
 
+  // Verify the session is real before touching any guest data. The local
+  // user can be stale (e.g. set by a login whose cookie the browser never
+  // stored), and every migration call would then 401 — clearing anything
+  // would destroy guest data with nothing migrated. A failed check aborts
+  // the run and leaves everything intact for a later sign-in.
+  let sessionUser = user;
+  try {
+    const res = await api.get<{ user: User }>('/auth/me');
+    if (res?.data?.user) sessionUser = res.data.user;
+  } catch (err) {
+    console.warn(
+      '[guest migration] no working session, leaving guest data intact:',
+      err instanceof Error ? err.message : err
+    );
+    return { ...EMPTY_RESULT };
+  }
+
   const result: GuestMigrationResult = { ...EMPTY_RESULT };
   const failures: string[] = [];
+  // Ids of the items that were actually migrated — only these are removed
+  // from the guest store at the end.
+  const migratedRecipeIds: string[] = [];
+  const migratedPlanIds: string[] = [];
+  const regeneratedListIds: string[] = [];
+  let pantryMerged = false;
 
   // 1. Recipes first — plans reference them by id.
   const recipeIdMap = new Map<string, string>();
@@ -99,6 +126,7 @@ async function migrateOnce(qc?: QueryClient): Promise<GuestMigrationResult> {
       const serverId = raw.id ?? raw._id;
       if (serverId) recipeIdMap.set(recipe.id, String(serverId));
       result.recipesMigrated += 1;
+      migratedRecipeIds.push(recipe.id);
     } catch (err) {
       result.recipesFailed += 1;
       failures.push(`recipe "${recipe.title}": ${err instanceof Error ? err.message : 'failed'}`);
@@ -125,6 +153,7 @@ async function migrateOnce(qc?: QueryClient): Promise<GuestMigrationResult> {
       const serverId = data.plan.id ?? (data.plan as unknown as { _id?: string })._id;
       if (serverId) planIdMap.set(plan.id, String(serverId));
       result.plansMigrated += 1;
+      migratedPlanIds.push(plan.id);
     } catch (err) {
       result.plansFailed += 1;
       failures.push(`meal plan ${plan.weekStartDate}: ${err instanceof Error ? err.message : 'failed'}`);
@@ -132,9 +161,11 @@ async function migrateOnce(qc?: QueryClient): Promise<GuestMigrationResult> {
   }
 
   // 3. Pantry: merge guest items into the account pantry, deduped by name.
+  // Uses the pantry from the session check above, not the possibly stale
+  // local user, so items already on the account are not re-posted.
   if (guest.pantry.length > 0) {
     try {
-      const current = user.pantry ?? [];
+      const current = sessionUser.pantry ?? [];
       const seen = new Set(current.map((p) => p.ingredient.toLowerCase().trim()));
       const additions = guest.pantry.filter((item) => {
         const name = item.ingredient.toLowerCase().trim();
@@ -149,6 +180,9 @@ async function migrateOnce(qc?: QueryClient): Promise<GuestMigrationResult> {
         useAuthStore.getState().setUser(data.user);
         result.pantryMerged = additions.length;
       }
+      // The merge succeeded (or there was nothing new to add): every guest
+      // pantry item is now on the account, so the local copy can go.
+      pantryMerged = true;
     } catch (err) {
       failures.push(`pantry: ${err instanceof Error ? err.message : 'failed'}`);
     }
@@ -166,15 +200,20 @@ async function migrateOnce(qc?: QueryClient): Promise<GuestMigrationResult> {
     try {
       await api.post('/grocery/generate', { mealPlanId: newPlanId, usePantry: true });
       result.listsRegenerated += 1;
+      regeneratedListIds.push(list.id);
     } catch (err) {
       result.listsFailed += 1;
       failures.push(`grocery list ${list.id}: ${err instanceof Error ? err.message : 'failed'}`);
     }
   }
 
-  // Always clear, even on partial failure, so a later sign-in can't
-  // re-post the same items.
-  useGuestStore.getState().clearAll();
+  // Remove ONLY the items that were actually migrated. Failed items stay
+  // in the browser so a later sign-in can retry them — never clearAll().
+  const store = useGuestStore.getState();
+  for (const id of migratedRecipeIds) store.deleteRecipe(id);
+  for (const id of migratedPlanIds) store.deleteMealPlan(id);
+  if (pantryMerged) store.clearPantry();
+  for (const id of regeneratedListIds) store.deleteGroceryList(id);
   if (failures.length > 0) {
     console.warn('[guest migration] some items could not be migrated:', failures);
   }

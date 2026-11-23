@@ -31,9 +31,26 @@ export function useGuestMigrationOnSignIn() {
     }
     if (!guestHasData || ranRef.current) return;
     ranRef.current = true;
-    void migrateGuestData(qc).catch((err) => {
-      // Migration is best-effort; a failure must never break sign-in.
-      console.warn('[guest migration] failed:', err);
-    });
+    void migrateGuestData(qc)
+      .then(() => {
+        // If anything is still waiting (items failed, or the session check
+        // aborted the run), arm the hook to retry on the next sign-in
+        // instead of swallowing the failure.
+        if (
+          hasGuestData({
+            pantry: useGuestStore.getState().pantry,
+            mealPlans: useGuestStore.getState().mealPlans,
+            groceryLists: useGuestStore.getState().groceryLists,
+            recipes: useGuestStore.getState().recipes,
+          })
+        ) {
+          ranRef.current = false;
+        }
+      })
+      .catch((err) => {
+        // Migration is best-effort; a failure must never break sign-in.
+        console.warn('[guest migration] failed:', err);
+        ranRef.current = false;
+      });
   }, [user, guestHasData, qc]);
 }

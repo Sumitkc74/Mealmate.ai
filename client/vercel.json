@@ -1,1 +1,1 @@
-{"$schema":"https://openapi.vercel.sh/vercel.json","buildCommand":"npm run build","framework":"vite","outputDirectory":"build","rewrites":[{"destination":"/index.html","source":"/(.*)"}]}
+{"$schema":"https://openapi.vercel.sh/vercel.json","buildCommand":"npm run build","framework":"vite","outputDirectory":"build","rewrites":[{"destination":"https://mealmate-server-utnx.onrender.com/api/:path*","source":"/api/:path*"},{"destination":"https://mealmate-server-utnx.onrender.com/static/:path*","source":"/static/:path*"},{"destination":"/index.html","source":"/(.*)"}]}

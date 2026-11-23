@@ -15,6 +15,7 @@ vi.mock('@/lib/api', async () => {
   };
 });
 
+const mockedGet = api.get as unknown as ReturnType<typeof vi.fn>;
 const mockedPost = api.post as unknown as ReturnType<typeof vi.fn>;
 const mockedPatch = api.patch as unknown as ReturnType<typeof vi.fn>;
 
@@ -68,6 +69,8 @@ describe('migrateGuestData', () => {
     localStorage.clear();
     useGuestStore.getState().clearAll();
     useAuthStore.setState({ user: testUser });
+    // The session check at the start of a migration succeeds.
+    mockedGet.mockResolvedValue({ data: { user: testUser } });
   });
 
   it('migrates pantry, recipes, plans and lists, then clears the guest store', async () => {
@@ -149,7 +152,7 @@ describe('migrateGuestData', () => {
     expect(result.plansMigrated).toBe(0);
   });
 
-  it('continues past a failed recipe and still clears the store', async () => {
+  it('keeps a failed recipe and removes only the one that migrated', async () => {
     const s = useGuestStore.getState();
     s.addRecipe(soupInput);
     s.addRecipe({ ...soupInput, title: 'Second Soup' });
@@ -165,9 +168,42 @@ describe('migrateGuestData', () => {
     const result = await migrateGuestData();
     expect(result.recipesMigrated).toBe(1);
     expect(result.recipesFailed).toBe(1);
-    // Even with a failure, the store is cleared so the next sign-in can't
-    // re-post the same items.
-    expect(useGuestStore.getState().recipes).toEqual([]);
+    // The failed recipe stays in the browser so a later sign-in can retry
+    // it; only the migrated one is removed.
+    const remaining = useGuestStore.getState().recipes;
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.title).toBe('Guest Soup');
+  });
+
+  it('does nothing and keeps all guest data when the session check fails', async () => {
+    mockedGet.mockRejectedValue({ response: { status: 401 } });
+    seedGuestData();
+
+    const result = await migrateGuestData();
+    expect(mockedPost).not.toHaveBeenCalled();
+    expect(mockedPatch).not.toHaveBeenCalled();
+    expect(result.recipesMigrated).toBe(0);
+    expect(result.plansMigrated).toBe(0);
+    // Nothing was wiped: the guest can sign in again and retry.
+    expect(useGuestStore.getState().recipes).toHaveLength(1);
+    expect(useGuestStore.getState().mealPlans).toHaveLength(1);
+    expect(useGuestStore.getState().pantry).toHaveLength(2);
+    expect(useGuestStore.getState().groceryLists).toHaveLength(1);
+  });
+
+  it('keeps everything when every migration call fails', async () => {
+    seedGuestData();
+    mockedPost.mockRejectedValue(new Error('server down'));
+    mockedPatch.mockRejectedValue(new Error('server down'));
+
+    const result = await migrateGuestData();
+    expect(result.recipesFailed).toBe(1);
+    expect(result.plansFailed).toBe(1);
+    expect(result.listsFailed).toBe(1);
+    expect(useGuestStore.getState().recipes).toHaveLength(1);
+    expect(useGuestStore.getState().mealPlans).toHaveLength(1);
+    expect(useGuestStore.getState().pantry).toHaveLength(2);
+    expect(useGuestStore.getState().groceryLists).toHaveLength(1);
   });
 
   it('does nothing when no user is signed in', async () => {

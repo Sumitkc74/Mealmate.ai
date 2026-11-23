@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api, getApiBaseUrl } from '@/lib/api';
 
 // ---------------------------------------------------------------------------
 // Shared union types matching the AI service
@@ -215,7 +215,9 @@ export async function streamAssistantChat(
     onError: (err: unknown) => void;
   }
 ): Promise<void> {
-  const baseUrl = import.meta.env.VITE_API_URL ?? '/api';
+  // Same-origin in production (the /api rewrite proxies to Render), so the
+  // httpOnly auth cookie is first-party and is sent with the stream.
+  const baseUrl = getApiBaseUrl();
   const response = await fetch(`${baseUrl}/ai/chat/stream`, {
     method: 'POST',
     // Send the httpOnly auth cookie (the server reads the JWT from it).
