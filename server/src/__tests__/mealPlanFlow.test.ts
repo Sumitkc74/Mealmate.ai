@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { createApp } from '../app';
 import { connectInMemoryDB, clearDB, disconnectInMemoryDB } from '../test/db';
+import { tokenFromCookie } from '../test/auth';
 import { Recipe } from '../models/Recipe';
 import { MealPlan } from '../models/MealPlan';
 
@@ -46,8 +47,8 @@ beforeAll(async () => {
 beforeEach(async () => {
   const reg = await request(app)
     .post('/api/auth/register')
-    .send({ name: 'Test', email: 'test@x.com', password: 'longpass123' });
-  token = reg.body.token;
+    .send({ name: 'Test', email: 'test@x.com', password: 'longpass123' , termsAccepted: true, dietaryConsent: true });
+  token = tokenFromCookie(reg);
   const r1 = await request(app)
     .post('/api/recipes')
     .set('Authorization', `Bearer ${token}`)
@@ -184,11 +185,11 @@ describe('Meal plan + grocery + nutrition flow', () => {
 
     const reg2 = await request(app)
       .post('/api/auth/register')
-      .send({ name: 'Eve', email: 'eve@x.com', password: 'longpass123' });
+      .send({ name: 'Eve', email: 'eve@x.com', password: 'longpass123' , termsAccepted: true, dietaryConsent: true });
 
     const res = await request(app)
       .get(`/api/mealplans/${planId}`)
-      .set('Authorization', `Bearer ${reg2.body.token}`);
+      .set('Authorization', `Bearer ${tokenFromCookie(reg2)}`);
     expect(res.status).toBe(404);
   });
 });

@@ -27,6 +27,11 @@ class Settings(BaseSettings):
 
     allowed_origins: str = Field(default="http://localhost:3000,http://localhost:5000")
 
+    # Shared secret the Express server sends as X-AI-Service-Key. When set,
+    # every route except /health (and docs) requires it; when unset (local
+    # dev only) requests are allowed with a warning. Production must set it.
+    ai_service_key: str = Field(default="")
+
     @property
     def origins_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]

@@ -35,6 +35,16 @@ export interface IUser {
   passwordResetToken?: string;
   /** Expiry of the active password-reset token. */
   passwordResetExpires?: Date;
+  /**
+   * Token version, embedded in every JWT. Bumped on password reset/change so
+   * all previously issued tokens are invalidated at once (a stolen token
+   * stops working the moment the user resets their password).
+   */
+  tokenVersion: number;
+  /** Consecutive failed login attempts (resets on a successful login). */
+  failedLoginAttempts: number;
+  /** Account locked until this time after too many failed logins. */
+  lockUntil?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -109,6 +119,13 @@ const UserSchema = new Schema<IUser, UserModel, IUserMethods>(
     // returned by default; the reset handler selects them explicitly.
     passwordResetToken: { type: String, select: false },
     passwordResetExpires: { type: Date, select: false },
+    // Bumped on password reset/change to invalidate all prior JWTs.
+    tokenVersion: { type: Number, default: 0 },
+    // Per-account brute-force protection: consecutive failed logins, and a
+    // lockout timestamp once the threshold is hit. select:false so they are
+    // never returned; the login handler selects them explicitly.
+    failedLoginAttempts: { type: Number, default: 0, select: false },
+    lockUntil: { type: Date, select: false },
   },
   {
     timestamps: true,

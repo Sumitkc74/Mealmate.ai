@@ -34,7 +34,8 @@ export interface PantryItem {
 }
 
 export interface AuthResponse {
-  token: string;
+  // The JWT is set as an httpOnly cookie by the server and is never exposed
+  // to JavaScript; the response carries only the user profile.
   user: User;
 }
 

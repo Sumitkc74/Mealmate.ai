@@ -86,7 +86,7 @@ export function RecipesPage() {
 
   // Guests can browse, but adding needs an account: send them to sign in
   // (they come back here after logging in) instead of opening the form.
-  const isAuthed = useAuthStore((s) => Boolean(s.token));
+  const isAuthed = useAuthStore((s) => Boolean(s.user));
   const navigate = useNavigate();
 
   function requireAuth(message: string) {

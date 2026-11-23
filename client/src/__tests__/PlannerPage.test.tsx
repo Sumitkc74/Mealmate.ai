@@ -39,7 +39,6 @@ describe('PlannerPage', () => {
     get.mockReset();
     post.mockReset();
     useAuthStore.setState({
-      token: 'fake',
       user: {
         id: 'u1',
         name: 'Test',
@@ -127,7 +126,7 @@ describe('PlannerPage', () => {
   });
 
   it('lets guests browse the grid and sends them to sign in to generate a week', async () => {
-    useAuthStore.setState({ token: null, user: null });
+    useAuthStore.setState({ user: null });
     get.mockImplementation((url: string) => {
       if (url === '/ai/capabilities') {
         return Promise.resolve({
@@ -159,7 +158,7 @@ describe('PlannerPage', () => {
   });
 
   it('still shows guests the Generate button when the AI service is offline', async () => {
-    useAuthStore.setState({ token: null, user: null });
+    useAuthStore.setState({ user: null });
     get.mockImplementation((url: string) => {
       if (url === '/ai/capabilities') {
         return Promise.reject(new Error('service down'));

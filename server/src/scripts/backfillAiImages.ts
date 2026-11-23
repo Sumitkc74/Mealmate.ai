@@ -20,12 +20,16 @@ import { logger } from '../config/logger';
 import { Recipe } from '../models/Recipe';
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL ?? 'http://127.0.0.1:8000';
+const AI_SERVICE_KEY = process.env.AI_SERVICE_KEY;
 
 async function fetchFreshImage(title: string, cuisine?: string, ingredients?: string[]): Promise<string | null> {
   try {
     const resp = await fetch(`${AI_SERVICE_URL}/recipes/refresh-image`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(AI_SERVICE_KEY ? { 'X-AI-Service-Key': AI_SERVICE_KEY } : {}),
+      },
       body: JSON.stringify({ title, cuisine, ingredients }),
     });
     if (!resp.ok) {

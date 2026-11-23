@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { connectDB, disconnectDB } from '../config/db';
 import { logger } from '../config/logger';
-import { Recipe } from '../models/Recipe';
+import { Recipe, COMMUNITY_OWNER_ID } from '../models/Recipe';
 
 interface SeedRecipe {
   recipe_id: string;
@@ -44,6 +44,12 @@ function toMongoRecipe(r: SeedRecipe) {
     nutrition: {},
     difficulty: 'easy' as const,
     source: 'seed',
+    // Seeded recipes belong to the shared library, so they are community
+    // recipes (editable by any signed-in user, ownership transfers on edit).
+    // Never leave createdBy unset: an ownerless recipe would be editable by
+    // no one under the deny-by-default owner check — or by everyone under
+    // the old falsy-createdBy skip.
+    createdBy: COMMUNITY_OWNER_ID,
   };
 }
 

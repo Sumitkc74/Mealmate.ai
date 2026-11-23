@@ -5,14 +5,15 @@ import { useAuthStore } from '@/stores/authStore';
 
 let socket: Socket | null = null;
 
-function getSocket(token: string | null): Socket | null {
-  if (!token) return null;
+function getSocket(): Socket | null {
   if (socket && socket.connected) return socket;
   if (socket) socket.disconnect();
+  // Auth rides on the httpOnly cookie (withCredentials sends it); the server
+  // reads the token from the cookie during the Socket.IO handshake.
   socket = io({
     path: '/api/realtime',
     transports: ['websocket', 'polling'],
-    auth: { token },
+    withCredentials: true,
     reconnection: true,
   });
   return socket;
@@ -24,12 +25,12 @@ function getSocket(token: string | null): Socket | null {
  * are invalidated so the UI refreshes automatically.
  */
 export function useMealPlanRealtime(mealPlanId: string | undefined): void {
-  const token = useAuthStore((s) => s.token);
+  const isAuthed = useAuthStore((s) => Boolean(s.user));
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    if (!mealPlanId || !token) return;
-    const s = getSocket(token);
+    if (!mealPlanId || !isAuthed) return;
+    const s = getSocket();
     if (!s) return;
 
     const handleUpdate = () => {
@@ -51,5 +52,5 @@ export function useMealPlanRealtime(mealPlanId: string | undefined): void {
       s.off('mealplan:updated', handleUpdate);
       s.off('mealplan:deleted', handleDelete);
     };
-  }, [mealPlanId, token, queryClient]);
+  }, [mealPlanId, isAuthed, queryClient]);
 }

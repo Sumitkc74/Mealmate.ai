@@ -22,9 +22,16 @@ function getTransporter(): Transporter {
   return transporter;
 }
 
-/** Base URL of the frontend, used to build links sent in emails. */
+/**
+ * Base URL of the frontend, used to build links sent in emails.
+ * CORS_ORIGIN is a comma-separated list, so it can never be used verbatim:
+ * with several origins the reset link would be malformed. Use only the
+ * first origin as the fallback, and prefer FRONTEND_URL (required when mail
+ * is configured — see isMailConfigured).
+ */
 export function frontendBaseUrl(): string {
-  return env.FRONTEND_URL ?? env.CORS_ORIGIN;
+  if (env.FRONTEND_URL) return env.FRONTEND_URL;
+  return env.CORS_ORIGIN.split(',')[0]?.trim() || 'http://localhost:3000';
 }
 
 /** Send a password-reset email with the reset link. Throws on failure. */

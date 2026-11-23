@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { createApp } from '../app';
 import { connectInMemoryDB, clearDB, disconnectInMemoryDB } from '../test/db';
+import { tokenFromCookie } from '../test/auth';
 import { Recipe } from '../models/Recipe';
 import { verifyRecipeWithAiService } from '../services/aiClient';
 
@@ -46,8 +47,8 @@ beforeAll(async () => {
 beforeEach(async () => {
   const reg = await request(app)
     .post('/api/auth/register')
-    .send({ name: 'Chef Alex', email: 'alex@example.com', password: 'securepassword123' });
-  token = reg.body.token;
+    .send({ name: 'Chef Alex', email: 'alex@example.com', password: 'securepassword123' , termsAccepted: true, dietaryConsent: true });
+  token = tokenFromCookie(reg);
 });
 
 afterEach(async () => {

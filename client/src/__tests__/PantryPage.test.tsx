@@ -33,7 +33,6 @@ describe('PantryPage & Modern Minimalist Pantry UI', () => {
   beforeEach(() => {
     mockedPatch.mockReset();
     useAuthStore.setState({
-      token: 'test-token',
       user: {
         id: 'u1',
         name: 'Chef Test',
@@ -192,7 +191,6 @@ describe('PantryPage & Modern Minimalist Pantry UI', () => {
   it('displays expiring items alert banner and supports filtering to expiring items', async () => {
     // Set an item that expires in 1 day
     useAuthStore.setState({
-      token: 'test-token',
       user: {
         id: 'u1',
         name: 'Chef Test',
@@ -277,7 +275,6 @@ describe('PantryPage & Modern Minimalist Pantry UI', () => {
 
   it('renders cooking history section with meals, ratings, and notes', async () => {
     useAuthStore.setState({
-      token: 'test-token',
       user: {
         id: 'u1',
         name: 'Chef Test',
@@ -311,7 +308,7 @@ describe('PantryPage & Modern Minimalist Pantry UI', () => {
   });
 
   it('lets guests browse the pantry with empty sections and a sign-in notice', async () => {
-    useAuthStore.setState({ token: null, user: null });
+    useAuthStore.setState({ user: null });
     renderWithClient(<PantryPage />);
 
     expect(await screen.findByText(/browsing as a guest/i)).toBeInTheDocument();
@@ -327,7 +324,7 @@ describe('PantryPage & Modern Minimalist Pantry UI', () => {
     // freshly signed-in user's pantry was undefined and adding crashed
     // silently outside the error handling, leaving the typed value in the form.
     const slimUser = { id: 'u2', name: 'Fresh', email: 'fresh@test.com', role: 'user' } as User;
-    useAuthStore.setState({ token: 'test-token', user: slimUser });
+    useAuthStore.setState({ user: slimUser });
     mockedPatch.mockResolvedValue({
       data: {
         user: {

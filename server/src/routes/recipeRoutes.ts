@@ -13,6 +13,7 @@ import {
 } from '../controllers/recipeController';
 import { validate } from '../middleware/validate';
 import { protect } from '../middleware/authMiddleware';
+import { aiCostLimiter } from '../middleware/aiCostLimiter';
 import {
   createRecipeSchema,
   bulkCreateRecipeSchema,
@@ -28,11 +29,17 @@ import {
 const router = Router();
 
 router.get('/', validate({ query: listRecipesQuerySchema }), listRecipes);
-router.post('/verify', protect, validate({ body: verifyRecipeSchema }), verifyRecipeController);
-router.post('/estimate-nutrition', protect, validate({ body: estimateNutritionSchema }), estimateNutritionController);
-router.post('/generate', protect, validate({ body: generateRecipeSchema }), generateRecipe);
-router.post('/bulk', protect, validate({ body: bulkCreateRecipeSchema }), bulkCreateRecipes);
-router.post('/reverify-pending', protect, reverifyPendingRecipesController);
+router.post('/verify', protect, aiCostLimiter, validate({ body: verifyRecipeSchema }), verifyRecipeController);
+router.post(
+  '/estimate-nutrition',
+  protect,
+  aiCostLimiter,
+  validate({ body: estimateNutritionSchema }),
+  estimateNutritionController
+);
+router.post('/generate', protect, aiCostLimiter, validate({ body: generateRecipeSchema }), generateRecipe);
+router.post('/bulk', protect, aiCostLimiter, validate({ body: bulkCreateRecipeSchema }), bulkCreateRecipes);
+router.post('/reverify-pending', protect, aiCostLimiter, reverifyPendingRecipesController);
 router.get('/:id', validate({ params: recipeIdOrSlugParamSchema }), getRecipe);
 router.post('/', protect, validate({ body: createRecipeSchema }), createRecipe);
 router.patch(

@@ -75,11 +75,14 @@ export function useResetPassword() {
 }
 
 export function useMe() {
-  const token = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   return useQuery({
     queryKey: ['me'],
-    enabled: Boolean(token),
+    // Re-validate the session whenever a user is persisted (page reload):
+    // the cookie is sent automatically, and a 401 clears auth via the api
+    // interceptor.
+    enabled: Boolean(user),
     queryFn: async (): Promise<User> => {
       const { data } = await api.get<{ user: User }>('/auth/me');
       setUser(data.user);
@@ -93,6 +96,9 @@ export function useLogout() {
   const logout = useAuthStore((s) => s.logout);
   const queryClient = useQueryClient();
   return () => {
+    // Clear the server-side httpOnly cookie too (fire-and-forget: local
+    // state is cleared regardless).
+    void api.post('/auth/logout').catch(() => undefined);
     logout();
     queryClient.clear();
   };

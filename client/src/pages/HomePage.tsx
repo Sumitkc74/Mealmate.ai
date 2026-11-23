@@ -56,7 +56,7 @@ export function HomePage() {
       'Plan meals with real kitchen constraints. MealMate matches recipes to your pantry inventory, minimizes food waste, and calculates grocery consolidation.',
   });
 
-  const isAuthed = useAuthStore((s) => Boolean(s.token));
+  const isAuthed = useAuthStore((s) => Boolean(s.user));
   const [selectedIngredients, setSelectedIngredients] = useState<string[]>([
     'Eggs',
     'Garlic',

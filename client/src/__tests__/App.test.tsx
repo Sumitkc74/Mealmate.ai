@@ -40,7 +40,7 @@ function renderAt(path: string) {
 
 describe('App routing', () => {
   beforeEach(() => {
-    useAuthStore.setState({ token: null, user: null });
+    useAuthStore.setState({ user: null });
     localStorage.clear();
   });
 
@@ -78,7 +78,6 @@ describe('App routing', () => {
 
   it('renders a protected page when authenticated', async () => {
     const authState = {
-      token: 'fake-token',
       user: {
         id: '1',
         name: 'Test',
@@ -124,7 +123,6 @@ describe('App routing', () => {
 
   it('renders Account & Privacy settings on /privacy/manage when authenticated', async () => {
     const authState = {
-      token: 'fake-token',
       user: {
         id: '1',
         name: 'Test',

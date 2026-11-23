@@ -20,7 +20,7 @@ const mockedPost = api.post as unknown as ReturnType<typeof vi.fn>;
 
 function renderAssistantAsGuest() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  useAuthStore.setState({ token: null, user: null });
+  useAuthStore.setState({ user: null });
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
@@ -33,7 +33,6 @@ function renderAssistantAsGuest() {
 function renderAssistantAsUser() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   useAuthStore.setState({
-    token: 'test-token',
     user: { id: 'u1', name: 'Test', email: 't@x.com', role: 'user', pantry: [], dietaryPreferences: [], allergies: [] },
   });
   return render(

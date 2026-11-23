@@ -59,7 +59,6 @@ describe('RecipesPage', () => {
     // panel renders quietly without affecting other assertions.
     mockedPost.mockResolvedValue({ data: { success: true, count: 0, results: [] } });
     useAuthStore.setState({
-      token: 'fake',
       user: {
         id: 'u1',
         name: 'Test',
@@ -124,7 +123,7 @@ describe('RecipesPage', () => {
 describe('RecipesPage guest browsing', () => {
   function renderPageAsGuest() {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    useAuthStore.setState({ token: null, user: null });
+    useAuthStore.setState({ user: null });
     return render(
       <QueryClientProvider client={qc}>
         <MemoryRouter

@@ -21,6 +21,7 @@ jest.mock('../services/aiClient', () => ({
 
 import { createApp } from '../app';
 import { connectInMemoryDB, clearDB, disconnectInMemoryDB } from '../test/db';
+import { tokenFromCookie } from '../test/auth';
 import { User } from '../models/User';
 import { Recipe } from '../models/Recipe';
 import {
@@ -63,8 +64,8 @@ afterAll(async () => {
 async function authedToken(): Promise<string> {
   const res = await request(app)
     .post('/api/auth/register')
-    .send({ name: 'Eve', email: 'eve@example.com', password: 'longpass123' });
-  return res.body.token as string;
+    .send({ name: 'Eve', email: 'eve@example.com', password: 'longpass123' , termsAccepted: true, dietaryConsent: true });
+  return tokenFromCookie(res);
 }
 
 describe('AI routes', () => {

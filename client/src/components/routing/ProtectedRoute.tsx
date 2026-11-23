@@ -17,16 +17,16 @@ const MESSAGES: Array<{ test: (path: string) => boolean; message: string }> = [
 ];
 
 export function ProtectedRoute() {
-  const token = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
   const location = useLocation();
   const { isError } = useMe();
 
-  // If /auth/me rejects (token invalid/expired), the api 401 interceptor clears auth.
+  // If /auth/me rejects (cookie invalid/expired), the api 401 interceptor clears auth.
   useEffect(() => {
     /* no-op: useMe runs side effects via store */
   }, [isError]);
 
-  if (!token) {
+  if (!user) {
     const match = MESSAGES.find((m) => m.test(location.pathname));
     return (
       <Navigate
@@ -40,7 +40,7 @@ export function ProtectedRoute() {
 }
 
 export function PublicOnlyRoute() {
-  const token = useAuthStore((s) => s.token);
-  if (token) return <Navigate to="/recipes" replace />;
+  const user = useAuthStore((s) => s.user);
+  if (user) return <Navigate to="/recipes" replace />;
   return <Outlet />;
 }

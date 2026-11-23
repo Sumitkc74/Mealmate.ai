@@ -13,7 +13,6 @@ export function ProfilePrivacyPage() {
   });
 
   const user = useAuthStore((s) => s.user);
-  const token = useAuthStore((s) => s.token);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
 
@@ -65,7 +64,7 @@ export function ProfilePrivacyPage() {
     }
   }
 
-  if (!user || !token) {
+  if (!user) {
     return (
       <div className="mx-auto max-w-md py-12 text-center space-y-4">
         <h2 className="font-serif text-2xl font-semibold text-ink">Sign in required</h2>

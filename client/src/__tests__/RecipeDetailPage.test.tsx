@@ -65,7 +65,6 @@ describe('RecipeDetailPage Enhancements', () => {
     mockedGet.mockResolvedValue({ data: { recipe: mockRecipe } });
 
     useAuthStore.setState({
-      token: 'valid-token',
       user: {
         id: 'u1',
         name: 'Chef Tester',
@@ -222,7 +221,7 @@ describe('RecipeDetailPage Enhancements', () => {
 describe('RecipeDetailPage guest browsing', () => {
   function renderPageAsGuest() {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    useAuthStore.setState({ token: null, user: null });
+    useAuthStore.setState({ user: null });
     return render(
       <QueryClientProvider client={qc}>
         <MemoryRouter initialEntries={['/recipes/r1']}>

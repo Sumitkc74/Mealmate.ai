@@ -43,7 +43,7 @@ describe('streamAssistantChat', () => {
     // failed after the SSE headers were sent). The UI must not sit on
     // "Assistant is typing" forever — the caller falls back to the
     // non-streaming endpoint from onError.
-    useAuthStore.setState({ token: 'test-token', user: testUser() });
+    useAuthStore.setState({ user: testUser() });
     mockFetchStream([]);
 
     const onToken = vi.fn();
@@ -56,7 +56,7 @@ describe('streamAssistantChat', () => {
   });
 
   it('calls onDone when the stream ends with a done event', async () => {
-    useAuthStore.setState({ token: 'test-token', user: testUser() });
+    useAuthStore.setState({ user: testUser() });
     const payload = JSON.stringify({
       type: 'done',
       reply: 'Try tomato soup.',

@@ -3,6 +3,7 @@ import path from 'node:path';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
+import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import { env } from './config/env';
@@ -34,6 +35,8 @@ export function createApp(): Express {
     })
   );
   app.use(compression());
+  // Parse cookies so the auth middleware can read the httpOnly JWT cookie.
+  app.use(cookieParser());
   // Scoped body parsing: 10mb limit reserved strictly for fridge photo vision analysis; 1mb globally to prevent memory exhaustion DoS
   app.use('/api/ai/pantry/vision', express.json({ limit: '10mb' }));
   app.use(express.json({ limit: '1mb' }));
@@ -68,8 +71,13 @@ export function createApp(): Express {
     })
   );
 
-  // Health check
+  // Health check. In production this answers only { success: true } — the
+  // version, env, and uptime are operational details, not public information.
   app.get('/api/health', (_req: Request, res: Response) => {
+    if (env.NODE_ENV === 'production') {
+      res.json({ success: true });
+      return;
+    }
     res.json({
       success: true,
       service: 'mealmate-server',
@@ -80,11 +88,12 @@ export function createApp(): Express {
     });
   });
 
-  // Prometheus metrics (no auth — same convention as cAdvisor/kube-state).
-  app.get('/metrics', metricsHandler);
-
-  // OpenAPI documentation UI
-  installSwagger(app);
+  // Prometheus metrics and the OpenAPI docs are operational surfaces, not
+  // public API: they are only mounted outside production.
+  if (env.NODE_ENV !== 'production') {
+    app.get('/metrics', metricsHandler);
+    installSwagger(app);
+  }
 
   // Feature routes
   app.use('/api/auth', authRoutes);

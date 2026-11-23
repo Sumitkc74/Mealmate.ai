@@ -66,9 +66,19 @@ export function initRealtime(httpServer: HttpServer): import('socket.io').Server
   });
 
   io.use((socket, next) => {
+    // The JWT can arrive three ways: the httpOnly cookie (the client no
+    // longer stores the token, so the browser sends the cookie), the
+    // Socket.IO auth payload (older clients), or an Authorization header.
+    const cookieHeader = socket.handshake.headers.cookie ?? '';
+    const cookieToken = cookieHeader
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith('mealmate_token='))
+      ?.slice('mealmate_token='.length);
     const token =
-      (socket.handshake.auth?.token as string | undefined) ??
-      (socket.handshake.headers.authorization as string | undefined)?.replace(/^Bearer\s+/i, '');
+      cookieToken ??
+      ((socket.handshake.auth?.token as string | undefined) ||
+        (socket.handshake.headers.authorization as string | undefined)?.replace(/^Bearer\s+/i, ''));
     if (!token) return next(new Error('unauthorized'));
     try {
       const decoded = jwt.verify(token, env.JWT_SECRET) as { sub?: string; id?: string };

@@ -21,7 +21,7 @@ export function RecipeDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
-  const isAuthed = useAuthStore((s) => Boolean(s.token));
+  const isAuthed = useAuthStore((s) => Boolean(s.user));
   const { data: recipe, isLoading, isError, error } = useRecipe(id);
 
   usePageMetadata({
@@ -316,6 +316,7 @@ export function RecipeDetailPage() {
             height={360}
             loading="eager"
             decoding="async"
+            referrerPolicy="no-referrer"
             className="h-[360px] w-full object-cover"
             onError={() => setImageOk(false)}
           />

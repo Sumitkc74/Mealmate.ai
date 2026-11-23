@@ -47,8 +47,7 @@ export function AiAssistant() {
   const [subResults, setSubResults] = useState<{ target: string; substitute: string; ratio: string; context: string; notes: string }[]>([]);
   const [subLoading, setSubLoading] = useState(false);
   const [subError, setSubError] = useState<string | null>(null);
-  const token = useAuthStore((s) => s.token);
-  const isAuthed = Boolean(token);
+  const isAuthed = useAuthStore((s) => Boolean(s.user));
 
   async function searchSubstitutes(ing: string) {
     const clean = ing.trim();

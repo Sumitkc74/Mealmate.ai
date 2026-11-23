@@ -6,6 +6,7 @@ import { GroceryList } from '../models/GroceryList';
 import { Recipe, COMMUNITY_OWNER_ID } from '../models/Recipe';
 import { AppError } from '../utils/AppError';
 import { signAccessToken } from '../utils/jwt';
+import { setAuthCookie, clearAuthCookie } from '../utils/authCookie';
 import { asyncHandler } from '../utils/asyncHandler';
 import { frontendBaseUrl, isMailConfigured, sendPasswordResetEmail } from '../services/mailer';
 import type {
@@ -20,7 +21,12 @@ export const register = asyncHandler<unknown, unknown, RegisterInput>(async (req
   const { name, email, password, termsAccepted, dietaryConsent, marketingOptIn } = req.body;
 
   const existing = await User.findOne({ email });
-  if (existing) throw AppError.conflict('Email already registered');
+  // Do not reveal whether the email is registered: the message is generic
+  // and the client shows it as a form error (sign-in hint), so an attacker
+  // cannot use registration to confirm an email exists.
+  if (existing) {
+    throw AppError.conflict('Unable to create an account with these details. If you already have an account, please sign in instead.');
+  }
 
   const user = await User.create({
     name,
@@ -30,11 +36,13 @@ export const register = asyncHandler<unknown, unknown, RegisterInput>(async (req
     dietaryConsentAt: dietaryConsent ? new Date() : undefined,
     marketingOptIn: Boolean(marketingOptIn),
   });
-  const token = signAccessToken({ sub: String(user._id), role: user.role });
+  const token = signAccessToken({ sub: String(user._id), role: user.role, tokenVersion: user.tokenVersion ?? 0 });
 
+  // The JWT goes in an httpOnly cookie (never in the response body), so
+  // JavaScript cannot read it. The client stores only the user profile.
+  setAuthCookie(res, token);
   res.status(201).json({
     success: true,
-    token,
     // Return the full profile (pantry, preferences, allergies): the client
     // keeps this user in its store, and pages that read user.pantry directly
     // would otherwise crash on the missing field after sign-up.
@@ -42,18 +50,51 @@ export const register = asyncHandler<unknown, unknown, RegisterInput>(async (req
   });
 });
 
+/** Failed logins before the account locks, and how long the lock lasts. */
+const MAX_FAILED_LOGINS = 5;
+const LOCK_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
 export const login = asyncHandler<unknown, unknown, LoginInput>(async (req, res) => {
   const { email, password } = req.body;
 
-  const user = await User.findOne({ email }).select('+password');
-  if (!user || !(await user.comparePassword(password))) {
+  const user = await User.findOne({ email }).select('+password +failedLoginAttempts +lockUntil');
+  if (!user) {
+    // Same generic message as a wrong password: never reveal whether the
+    // email is registered.
     throw AppError.unauthorized('Invalid email or password');
   }
 
-  const token = signAccessToken({ sub: String(user._id), role: user.role });
+  // Per-account lockout (on top of the per-IP authLimiter): after too many
+  // failed attempts the account is locked for a while, which stops
+  // credential spraying against a known email even from many IPs.
+  if (user.lockUntil && user.lockUntil.getTime() > Date.now()) {
+    throw AppError.unauthorized('Account temporarily locked after too many failed sign-in attempts. Please try again later.');
+  }
+
+  const passwordOk = await user.comparePassword(password);
+  if (!passwordOk) {
+    const attempts = (user.failedLoginAttempts ?? 0) + 1;
+    user.failedLoginAttempts = attempts;
+    if (attempts >= MAX_FAILED_LOGINS) {
+      user.lockUntil = new Date(Date.now() + LOCK_DURATION_MS);
+      user.failedLoginAttempts = 0;
+    }
+    await user.save();
+    throw AppError.unauthorized('Invalid email or password');
+  }
+
+  // Successful login clears any failed-attempt count and lock.
+  if (user.failedLoginAttempts || user.lockUntil) {
+    user.failedLoginAttempts = 0;
+    user.lockUntil = undefined;
+    await user.save();
+  }
+
+  const token = signAccessToken({ sub: String(user._id), role: user.role, tokenVersion: user.tokenVersion ?? 0 });
+  // httpOnly cookie (see register): the token is never returned in the body.
+  setAuthCookie(res, token);
   res.json({
     success: true,
-    token,
     // Full profile, same reason as register: the client stores this user and
     // reads user.pantry / preferences from it.
     user: user.toJSON(),
@@ -65,6 +106,12 @@ export const me = asyncHandler(async (req: Request, res: Response) => {
   const user = await User.findById(req.user.sub);
   if (!user) throw AppError.notFound('User not found');
   res.json({ success: true, user: user.toJSON() });
+});
+
+/** Clear the httpOnly auth cookie. The client also clears its local state. */
+export const logout = asyncHandler(async (_req: Request, res: Response) => {
+  clearAuthCookie(res);
+  res.json({ success: true, message: 'Signed out' });
 });
 
 export const updateProfile = asyncHandler<unknown, unknown, UpdateProfileInput>(
@@ -162,6 +209,8 @@ export const deleteAccount = asyncHandler(async (req: Request, res: Response) =>
     User.findByIdAndDelete(userId),
   ]);
 
+  // The account is gone; its cookie must not keep authenticating anything.
+  clearAuthCookie(res);
   res.json({
     success: true,
     message:
@@ -209,10 +258,12 @@ export const resetPassword = asyncHandler<unknown, unknown, ResetPasswordInput>(
     if (!user) throw AppError.badRequest('Invalid or expired reset link');
 
     // The pre-save hook hashes the new password; clearing the token fields
-    // makes the link single-use.
+    // makes the link single-use. Bumping tokenVersion invalidates every JWT
+    // issued before this reset, so a token stolen earlier stops working.
     user.password = password;
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
+    user.tokenVersion = (user.tokenVersion ?? 0) + 1;
     await user.save();
 
     res.json({ success: true, message: 'Password reset. Sign in with your new password.' });

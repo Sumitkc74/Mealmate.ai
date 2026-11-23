@@ -218,14 +218,12 @@ export const updateRecipe = asyncHandler<{ id: string }, unknown, UpdateRecipeIn
 
     // Community recipes (createdBy is the community owner) may be edited by
     // any signed-in user; editing transfers ownership to the editor.
+    // Deny by default: a recipe with no createdBy is NOT editable by anyone
+    // (an absent owner must never mean "open to all").
     const isCommunity =
       recipe.createdBy && String(recipe.createdBy) === String(COMMUNITY_OWNER_ID);
-    if (
-      recipe.createdBy &&
-      !isCommunity &&
-      String(recipe.createdBy) !== req.user.sub &&
-      req.user.role !== 'admin'
-    ) {
+    const isOwner = recipe.createdBy && String(recipe.createdBy) === req.user.sub;
+    if (!isCommunity && !isOwner && req.user.role !== 'admin') {
       throw AppError.forbidden('You may only edit your own recipes');
     }
 
@@ -275,15 +273,12 @@ export const deleteRecipe = asyncHandler<{ id: string }>(async (req, res) => {
   if (!recipe) throw AppError.notFound('Recipe not found');
 
   // Community recipes belong to the shared library, so any signed-in user
-  // may delete one; other recipes are owner-only.
+  // may delete one; other recipes are owner-only. Deny by default: a recipe
+  // with no createdBy is NOT deletable by anyone.
   const isCommunity =
     recipe.createdBy && String(recipe.createdBy) === String(COMMUNITY_OWNER_ID);
-  if (
-    recipe.createdBy &&
-    !isCommunity &&
-    String(recipe.createdBy) !== req.user.sub &&
-    req.user.role !== 'admin'
-  ) {
+  const isOwner = recipe.createdBy && String(recipe.createdBy) === req.user.sub;
+  if (!isCommunity && !isOwner && req.user.role !== 'admin') {
     throw AppError.forbidden('You may only delete your own recipes');
   }
 

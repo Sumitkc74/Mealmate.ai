@@ -15,7 +15,7 @@ export function GroceryPage() {
       'Manage consolidated weekly shopping lists organized by supermarket aisle, pre-subtracted against ingredients already in stock in your pantry.',
   });
 
-  const isAuthed = useAuthStore((s) => Boolean(s.token));
+  const isAuthed = useAuthStore((s) => Boolean(s.user));
   const { data, isLoading } = useGroceryLists(isAuthed);
   const [listSort, setListSort] = useState<GroceryListSortOption>('newest');
 

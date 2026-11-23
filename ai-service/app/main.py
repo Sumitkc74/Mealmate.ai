@@ -110,6 +110,7 @@ async def lifespan(_app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    is_production = settings.env.lower() == "production"
     app = FastAPI(
         title="MealMate AI Service",
         version="0.3.0",
@@ -121,7 +122,18 @@ def create_app() -> FastAPI:
             "LRU+TTL LLM caching."
         ),
         lifespan=lifespan,
+        # The ai-service is backend-only; its API docs are not for the
+        # public internet. Disable them in production.
+        docs_url=None if is_production else "/docs",
+        redoc_url=None if is_production else "/redoc",
+        openapi_url="/openapi.json" if not is_production else None,
     )
+
+    # Service-to-service auth + per-IP rate limit. Must run before the
+    # routes so unauthenticated requests never reach a handler.
+    from .security import AiServiceSecurityMiddleware
+
+    app.add_middleware(AiServiceSecurityMiddleware, api_key=settings.ai_service_key or None)
 
     app.add_middleware(
         CORSMiddleware,

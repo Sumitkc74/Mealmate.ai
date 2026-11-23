@@ -13,7 +13,13 @@ function getClient(): AxiosInstance {
       // Free-tier AI service sleeps when idle and needs 30-60s to wake; a
       // short timeout turns every first call of a session into a failure.
       timeout: 30000,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        // Service-to-service auth: the ai-service requires this shared
+        // secret on every route except /health. Sent only when configured
+        // (production); local dev runs without it.
+        ...(env.AI_SERVICE_KEY ? { 'X-AI-Service-Key': env.AI_SERVICE_KEY } : {}),
+      },
     });
   }
   return client;

@@ -33,7 +33,6 @@ describe('SuggestedRecipes & HomePage suggestions flow', () => {
   beforeEach(() => {
     mockedPost.mockReset();
     useAuthStore.setState({
-      token: 'test-token',
       user: {
         id: 'u1',
         name: 'Chef Test',
@@ -148,7 +147,7 @@ describe('SuggestedRecipes & HomePage suggestions flow', () => {
 
   it('shows real suggestions on HomePage when user is logged out', async () => {
     // Guests see popular recipes, not a sign-in wall.
-    useAuthStore.setState({ token: null, user: null });
+    useAuthStore.setState({ user: null });
     mockedPost.mockResolvedValueOnce({
       data: {
         success: true,
@@ -174,7 +173,7 @@ describe('SuggestedRecipes & HomePage suggestions flow', () => {
   });
 
   it('sends guests to sign in when they try to generate recipes with AI', async () => {
-    useAuthStore.setState({ token: null, user: null });
+    useAuthStore.setState({ user: null });
     mockedPost.mockResolvedValueOnce({
       data: {
         success: true,
@@ -216,7 +215,6 @@ describe('SuggestedRecipes & HomePage suggestions flow', () => {
 
   it('shows full suggestions on HomePage when user is logged in', async () => {
     useAuthStore.setState({
-      token: 'active-token',
       user: {
         id: 'u1',
         name: 'Logged Chef',

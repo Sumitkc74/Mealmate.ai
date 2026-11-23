@@ -26,7 +26,7 @@ export function NutritionPage() {
       'Analyze weekly calorie, protein, carbohydrate, and fat breakdowns calculated directly from your scheduled meal plans with MealMate nutrition analytics.',
   });
 
-  const isAuthed = useAuthStore((s) => Boolean(s.token));
+  const isAuthed = useAuthStore((s) => Boolean(s.user));
   const { data: plans, isLoading: loadingPlans } = useMealPlans(isAuthed);
   const [planId, setPlanId] = useState<string>('');
 

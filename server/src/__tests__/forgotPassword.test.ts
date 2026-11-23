@@ -88,11 +88,11 @@ describe('Reset password', () => {
     const token = await requestResetToken();
     const res = await request(app)
       .post('/api/auth/reset-password')
-      .send({ token, password: 'newpassword123' });
+      .send({ token, password: 'newpassword123' , termsAccepted: true, dietaryConsent: true });
     expect(res.status).toBe(200);
     const login = await request(app)
       .post('/api/auth/login')
-      .send({ email: user.email, password: 'newpassword123' });
+      .send({ email: user.email, password: 'newpassword123' , termsAccepted: true, dietaryConsent: true });
     expect(login.status).toBe(200);
     const oldLogin = await request(app)
       .post('/api/auth/login')
@@ -102,17 +102,17 @@ describe('Reset password', () => {
 
   it('rejects reusing a token', async () => {
     const token = await requestResetToken();
-    await request(app).post('/api/auth/reset-password').send({ token, password: 'newpassword123' });
+    await request(app).post('/api/auth/reset-password').send({ token, password: 'newpassword123' , termsAccepted: true, dietaryConsent: true });
     const again = await request(app)
       .post('/api/auth/reset-password')
-      .send({ token, password: 'anotherpass123' });
+      .send({ token, password: 'anotherpass123' , termsAccepted: true, dietaryConsent: true });
     expect(again.status).toBe(400);
   });
 
   it('rejects a bogus token', async () => {
     const res = await request(app)
       .post('/api/auth/reset-password')
-      .send({ token: 'deadbeef', password: 'newpassword123' });
+      .send({ token: 'deadbeef', password: 'newpassword123' , termsAccepted: true, dietaryConsent: true });
     expect(res.status).toBe(400);
   });
 
@@ -124,7 +124,7 @@ describe('Reset password', () => {
     );
     const res = await request(app)
       .post('/api/auth/reset-password')
-      .send({ token, password: 'newpassword123' });
+      .send({ token, password: 'newpassword123' , termsAccepted: true, dietaryConsent: true });
     expect(res.status).toBe(400);
   });
 
@@ -132,7 +132,7 @@ describe('Reset password', () => {
     const token = await requestResetToken();
     const res = await request(app)
       .post('/api/auth/reset-password')
-      .send({ token, password: 'short' });
+      .send({ token, password: 'short' , termsAccepted: true, dietaryConsent: true });
     expect(res.status).toBe(400);
   });
 });

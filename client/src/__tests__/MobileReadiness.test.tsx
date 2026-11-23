@@ -20,7 +20,6 @@ function renderNavbar() {
 describe('Mobile Readiness and Navigation', () => {
   it('toggles mobile navigation drawer with hamburger button', async () => {
     useAuthStore.setState({
-      token: 'fake-token',
       user: {
         id: 'u1',
         name: 'Test Chef',

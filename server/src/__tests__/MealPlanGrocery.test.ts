@@ -67,6 +67,8 @@ describe('GroceryList model', () => {
       name: 'Pantry Chef',
       email: 'chef@example.com',
       password: 'password123',
+      termsAccepted: true,
+      dietaryConsent: true,
       pantry: [
         {
           ingredient: 'milk',

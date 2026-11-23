@@ -63,7 +63,7 @@ export function PlannerPage() {
   });
 
   const navigate = useNavigate();
-  const isAuthed = useAuthStore((s) => Boolean(s.token));
+  const isAuthed = useAuthStore((s) => Boolean(s.user));
   const [weekStart, setWeekStart] = useState<Date>(() => startOfWeekMondayUTC());
   const [picker, setPicker] = useState<{ day: DayName; slot: Slot } | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import {
   register,
   login,
+  logout,
   forgotPassword,
   resetPassword,
   me,
@@ -45,6 +46,7 @@ router.post(
   validate({ body: resetPasswordSchema }),
   resetPassword
 );
+router.post('/logout', logout);
 router.get('/me', protect, me);
 router.patch('/me', protect, validate({ body: updateProfileSchema }), updateProfile);
 router.get('/me/export', protect, exportData);

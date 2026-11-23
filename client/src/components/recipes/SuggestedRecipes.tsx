@@ -35,7 +35,7 @@ interface Props {
  * decide whether they want an AI-generated option not yet in the system.
  */
 export function SuggestedRecipes({ onGenerateNew, className = '' }: Props = {}) {
-  const isAuthed = useAuthStore((s) => Boolean(s.token));
+  const isAuthed = useAuthStore((s) => Boolean(s.user));
   const navigate = useNavigate();
   const location = useLocation();
   const [strategy, setStrategy] = useState<RecommendStrategy>('hybrid');

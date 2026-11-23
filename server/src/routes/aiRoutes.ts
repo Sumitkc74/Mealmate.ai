@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { Router } from 'express';
-import rateLimit from 'express-rate-limit';
 import { protect, optionalProtect } from '../middleware/authMiddleware';
 import { validate } from '../middleware/validate';
 import { asyncHandler } from '../utils/asyncHandler';
@@ -30,20 +29,9 @@ import {
 } from '../services/aiClient';
 import { applyChatActions } from '../services/chatActions';
 import { logger } from '../config/logger';
+import { aiCostLimiter } from '../middleware/aiCostLimiter';
 
 const router = Router();
-
-// Tiered rate limit on resource- and LLM-heavy AI endpoints to prevent cost spikes and compute exhaustion
-const aiCostLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    success: false,
-    message: 'AI generation quota reached. Please try again shortly.',
-  },
-});
 
 const STRATEGIES = ['tfidf', 'lsa', 'collab', 'hybrid'] as const;
 const OBJECTIVES = ['balanced', 'eco', 'budget', 'pantry'] as const;
@@ -121,8 +109,12 @@ router.post(
     // Fetch recipes currently present in MongoDB
     const dbFilter: Record<string, unknown> = {};
     if (allergies.length > 0) {
+      // Allergies are user-supplied text, not regexes: escape metacharacters
+      // before building the pattern, or a crafted allergy like `(a+)+$`
+      // becomes a catastrophic-backtracking (ReDoS) pattern in MongoDB.
+      const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       dbFilter['ingredients.name'] = {
-        $nin: allergies.map((a) => new RegExp(a, 'i')),
+        $nin: allergies.map((a) => new RegExp(escapeRegex(a), 'i')),
       };
     }
     const dbRecipes = await Recipe.find(dbFilter).lean();
@@ -753,6 +745,7 @@ const parsePantrySchema = z.object({
 router.post(
   '/pantry/parse',
   protect,
+  aiCostLimiter,
   validate({ body: parsePantrySchema }),
   asyncHandler(async (req, res) => {
     if (!req.user) throw AppError.unauthorized();

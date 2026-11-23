@@ -23,6 +23,8 @@ services:
         value: 7d
       - key: AI_SERVICE_URL
         sync: false # Set after first deploy: https://mealmate-ai-service.onrender.com
+      - key: AI_SERVICE_KEY
+        sync: false # Shared secret the ai-service requires (X-AI-Service-Key). Set the SAME random value here AND on mealmate-ai-service, or AI calls will 401.
       - key: CORS_ORIGIN
         sync: false # Set after Vercel deploy: https://<mealmate-client>.vercel.app
       - key: LOG_LEVEL
@@ -45,5 +47,7 @@ services:
         value: INFO
       - key: GEMINI_API_KEY
         sync: false # Optional — all LLM surfaces fall back offline without it
+      - key: AI_SERVICE_KEY
+        sync: false # Shared secret the server sends as X-AI-Service-Key. Set the SAME random value here AND on mealmate-server, or AI calls will 401.
       - key: ALLOWED_ORIGINS
         sync: false # Set after Vercel deploy: Vercel URL + server URL, comma-separated

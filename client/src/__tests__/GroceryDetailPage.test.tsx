@@ -36,7 +36,6 @@ describe('GroceryDetailPage', () => {
     get.mockReset();
     patch.mockReset();
     useAuthStore.setState({
-      token: 'fake',
       user: {
         id: 'u1',
         name: 'Test',

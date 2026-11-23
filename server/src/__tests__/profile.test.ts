@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { createApp } from '../app';
 import { connectInMemoryDB, clearDB, disconnectInMemoryDB } from '../test/db';
+import { tokenFromCookie } from '../test/auth';
 
 const app = createApp();
 
@@ -17,8 +18,8 @@ afterAll(async () => {
 async function registerUser() {
   const reg = await request(app)
     .post('/api/auth/register')
-    .send({ name: 'Test', email: 'p@x.com', password: 'longpass123' });
-  return reg.body.token as string;
+    .send({ name: 'Test', email: 'p@x.com', password: 'longpass123' , termsAccepted: true, dietaryConsent: true });
+  return tokenFromCookie(reg);
 }
 
 describe('PATCH /api/auth/me', () => {

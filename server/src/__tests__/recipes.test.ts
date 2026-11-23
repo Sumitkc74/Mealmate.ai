@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { createApp } from '../app';
 import { connectInMemoryDB, clearDB, disconnectInMemoryDB } from '../test/db';
+import { tokenFromCookie } from '../test/auth';
 import { Recipe, COMMUNITY_OWNER_ID } from '../models/Recipe';
 import { User } from '../models/User';
 
@@ -31,8 +32,8 @@ beforeAll(async () => {
 beforeEach(async () => {
   const reg = await request(app)
     .post('/api/auth/register')
-    .send({ name: 'Chef', email: 'chef@example.com', password: 'longpass123' });
-  token = reg.body.token;
+    .send({ name: 'Chef', email: 'chef@example.com', password: 'longpass123' , termsAccepted: true, dietaryConsent: true });
+  token = tokenFromCookie(reg);
 });
 afterEach(async () => {
   await clearDB();
@@ -144,11 +145,11 @@ describe('Recipe routes', () => {
 
     const reg2 = await request(app)
       .post('/api/auth/register')
-      .send({ name: 'Eve', email: 'eve@example.com', password: 'longpass123' });
+      .send({ name: 'Eve', email: 'eve@example.com', password: 'longpass123' , termsAccepted: true, dietaryConsent: true });
 
     const res = await request(app)
       .patch(`/api/recipes/${id}`)
-      .set('Authorization', `Bearer ${reg2.body.token}`)
+      .set('Authorization', `Bearer ${tokenFromCookie(reg2)}`)
       .send({ servings: 99 });
     expect(res.status).toBe(403);
   });
@@ -165,12 +166,12 @@ describe('Recipe routes', () => {
 
     const reg2 = await request(app)
       .post('/api/auth/register')
-      .send({ name: 'Eve', email: 'eve@example.com', password: 'longpass123' });
+      .send({ name: 'Eve', email: 'eve@example.com', password: 'longpass123' , termsAccepted: true, dietaryConsent: true });
     const eve = await User.findOne({ email: 'eve@example.com' });
 
     const res = await request(app)
       .patch(`/api/recipes/${id}`)
-      .set('Authorization', `Bearer ${reg2.body.token}`)
+      .set('Authorization', `Bearer ${tokenFromCookie(reg2)}`)
       .send({ servings: 6 });
     expect(res.status).toBe(200);
     expect(res.body.recipe.servings).toBe(6);
@@ -189,11 +190,11 @@ describe('Recipe routes', () => {
 
     const reg2 = await request(app)
       .post('/api/auth/register')
-      .send({ name: 'Eve', email: 'eve@example.com', password: 'longpass123' });
+      .send({ name: 'Eve', email: 'eve@example.com', password: 'longpass123' , termsAccepted: true, dietaryConsent: true });
 
     const del = await request(app)
       .delete(`/api/recipes/${id}`)
-      .set('Authorization', `Bearer ${reg2.body.token}`);
+      .set('Authorization', `Bearer ${tokenFromCookie(reg2)}`);
     expect(del.status).toBe(200);
 
     const fetch = await request(app).get(`/api/recipes/${id}`);

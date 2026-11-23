@@ -21,7 +21,6 @@ const mockedPost = api.post as unknown as ReturnType<typeof vi.fn>;
 function renderSuggester(pantry: { ingredient: string }[] = [{ ingredient: 'tomato' }]) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   useAuthStore.setState({
-    token: 'test-token',
     user: { id: 'u1', name: 'Test', email: 't@x.com', role: 'user', pantry: [], dietaryPreferences: [], allergies: [] },
   });
   return {

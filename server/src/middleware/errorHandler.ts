@@ -5,8 +5,10 @@ import { AppError } from '../utils/AppError';
 import { env } from '../config/env';
 import { logger } from '../config/logger';
 
-export function notFoundHandler(req: Request, _res: Response, next: NextFunction) {
-  next(AppError.notFound(`Route not found: ${req.method} ${req.originalUrl}`));
+export function notFoundHandler(_req: Request, _res: Response, next: NextFunction) {
+  // Do not echo the requested URL back: it lets an attacker confirm which
+  // paths exist and reflects arbitrary input in the response.
+  next(AppError.notFound('Route not found'));
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -31,7 +33,8 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
     );
   } else if (err instanceof mongoose.Error.CastError) {
     statusCode = 400;
-    message = `Invalid ${err.path}: ${String(err.value)}`;
+    // Do not echo the offending value: it reflects user input in the response.
+    message = `Invalid ${err.path}`;
   } else if (err instanceof Error) {
     message = env.NODE_ENV === 'production' ? 'Internal server error' : err.message;
   }

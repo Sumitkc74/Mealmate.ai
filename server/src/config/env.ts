@@ -10,6 +10,10 @@ const EnvSchema = z.object({
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 chars'),
   JWT_EXPIRES_IN: z.string().default('7d'),
   AI_SERVICE_URL: z.string().url().default('http://localhost:8000'),
+  // Shared secret the ai-service requires as X-AI-Service-Key. Optional
+  // (local dev runs without it); production must set the same value on
+  // both the server and the ai-service, or AI calls will 401.
+  AI_SERVICE_KEY: z.string().optional(),
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
   // Base URL of the frontend, used to build links sent in emails (e.g. the
   // password-reset link). Falls back to CORS_ORIGIN when unset.

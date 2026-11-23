@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { createApp } from '../app';
 import { connectInMemoryDB, clearDB, disconnectInMemoryDB } from '../test/db';
+import { tokenFromCookie } from '../test/auth';
 import { User } from '../models/User';
 import { Recipe, COMMUNITY_OWNER_ID } from '../models/Recipe';
 
@@ -18,13 +19,21 @@ afterAll(async () => {
 });
 
 describe('Auth routes', () => {
-  const creds = { name: 'Alice', email: 'alice@example.com', password: 'longpass123' };
+  const creds = {
+    name: 'Alice',
+    email: 'alice@example.com',
+    password: 'longpass123',
+    termsAccepted: true,
+    dietaryConsent: true,
+  };
 
   it('POST /api/auth/register creates a user and returns a token', async () => {
     const res = await request(app).post('/api/auth/register').send(creds);
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
-    expect(res.body.token).toEqual(expect.any(String));
+    // The JWT is set as an httpOnly cookie, never returned in the body.
+    expect(String(res.headers["set-cookie"])).toMatch(/mealmate_token=/);
+    expect(res.body.token).toBeUndefined();
     expect(res.body.user.email).toBe(creds.email);
     // The client stores this user and reads profile fields from it, so the
     // auth response must carry the full profile, not just id/name/email/role.
@@ -43,8 +52,19 @@ describe('Auth routes', () => {
   it('POST /api/auth/register validates input', async () => {
     const res = await request(app)
       .post('/api/auth/register')
-      .send({ name: 'A', email: 'bad', password: 'short' });
+      .send({ name: 'A', email: 'bad', password: 'short' , termsAccepted: true, dietaryConsent: true });
     expect(res.status).toBe(400);
+  });
+
+  it('POST /api/auth/register rejects missing or false consent', async () => {
+    const noConsent = await request(app)
+      .post('/api/auth/register')
+      .send({ name: 'Bob', email: 'bob@example.com', password: 'longpass123' });
+    expect(noConsent.status).toBe(400);
+    const falseConsent = await request(app)
+      .post('/api/auth/register')
+      .send({ ...creds, email: 'carol@example.com', termsAccepted: false, dietaryConsent: false });
+    expect(falseConsent.status).toBe(400);
   });
 
   it('POST /api/auth/login returns token for valid credentials', async () => {
@@ -53,7 +73,9 @@ describe('Auth routes', () => {
       .post('/api/auth/login')
       .send({ email: creds.email, password: creds.password });
     expect(res.status).toBe(200);
-    expect(res.body.token).toEqual(expect.any(String));
+    // The JWT is set as an httpOnly cookie, never returned in the body.
+    expect(String(res.headers["set-cookie"])).toMatch(/mealmate_token=/);
+    expect(res.body.token).toBeUndefined();
     // Same full-profile requirement as register (see above).
     expect(res.body.user.pantry).toEqual([]);
     expect(res.body.user.dietaryPreferences).toEqual([]);
@@ -65,7 +87,7 @@ describe('Auth routes', () => {
     await request(app).post('/api/auth/register').send(creds);
     const res = await request(app)
       .post('/api/auth/login')
-      .send({ email: creds.email, password: 'wrongpass' });
+      .send({ email: creds.email, password: 'wrongpass' , termsAccepted: true, dietaryConsent: true });
     expect(res.status).toBe(401);
   });
 
@@ -78,7 +100,7 @@ describe('Auth routes', () => {
     const reg = await request(app).post('/api/auth/register').send(creds);
     const res = await request(app)
       .get('/api/auth/me')
-      .set('Authorization', `Bearer ${reg.body.token}`);
+      .set('Authorization', `Bearer ${tokenFromCookie(reg)}`);
     expect(res.status).toBe(200);
     expect(res.body.user.email).toBe(creds.email);
     expect(res.body.user).not.toHaveProperty('password');
@@ -88,7 +110,7 @@ describe('Auth routes', () => {
     const reg = await request(app).post('/api/auth/register').send(creds);
     const res = await request(app)
       .get('/api/auth/me/export')
-      .set('Authorization', `Bearer ${reg.body.token}`);
+      .set('Authorization', `Bearer ${tokenFromCookie(reg)}`);
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.user.email).toBe(creds.email);
@@ -101,7 +123,7 @@ describe('Auth routes', () => {
     const reg = await request(app).post('/api/auth/register').send(creds);
     const res = await request(app)
       .delete('/api/auth/me')
-      .set('Authorization', `Bearer ${reg.body.token}`);
+      .set('Authorization', `Bearer ${tokenFromCookie(reg)}`);
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
 
@@ -114,7 +136,7 @@ describe('Auth routes', () => {
     const reg = await request(app).post('/api/auth/register').send(creds);
     const create = await request(app)
       .post('/api/recipes')
-      .set('Authorization', `Bearer ${reg.body.token}`)
+      .set('Authorization', `Bearer ${tokenFromCookie(reg)}`)
       .send({
         title: 'Community Soup',
         ingredients: [{ name: 'water' }],
@@ -128,7 +150,7 @@ describe('Auth routes', () => {
 
     const res = await request(app)
       .delete('/api/auth/me')
-      .set('Authorization', `Bearer ${reg.body.token}`);
+      .set('Authorization', `Bearer ${tokenFromCookie(reg)}`);
     expect(res.status).toBe(200);
 
     // The user is gone, but the recipe survives in the shared library,

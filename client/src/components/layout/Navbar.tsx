@@ -15,7 +15,7 @@ const links = [
 
 export function Navbar() {
   const user = useAuthStore((s) => s.user);
-  const isAuthed = useAuthStore((s) => Boolean(s.token));
+  const isAuthed = useAuthStore((s) => Boolean(s.user));
   const logout = useLogout();
   const navigate = useNavigate();
   const location = useLocation();

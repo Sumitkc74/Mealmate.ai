@@ -18,6 +18,29 @@ const nutritionSchema = z
   })
   .optional();
 
+/**
+ * A user-supplied image URL. Accepts only https absolute URLs and
+ * server-relative paths (the image cache serves `/static/recipe-images/...`).
+ * Rejects `javascript:` / `data:` / `http:` — zod's `.url()` accepts
+ * `javascript:` URLs, which would be a stored-XSS vector the moment an
+ * image URL is ever rendered as a link, and a tracking-pixel / IP-logging
+ * vector for every viewer while it is an <img>.
+ */
+const imageUrlSchema = z
+  .string()
+  .refine(
+    (v) => {
+      if (v.startsWith('/')) return !v.startsWith('//');
+      try {
+        return new URL(v).protocol === 'https:';
+      } catch {
+        return false;
+      }
+    },
+    { message: 'imageUrl must be an https URL or a server-relative path' }
+  )
+  .optional();
+
 export const createRecipeSchema = z.object({
   title: z.string().trim().min(2).max(200),
   description: z.string().trim().max(2000).optional(),
@@ -29,18 +52,23 @@ export const createRecipeSchema = z.object({
   cookTime: z.number().int().nonnegative().max(1440),
   servings: z.number().int().positive().max(100),
   nutrition: nutritionSchema,
-  imageUrl: z.string().url().optional(),
+  imageUrl: imageUrlSchema,
   source: z.string().trim().max(200).optional(),
   difficulty: z.enum(['easy', 'medium', 'hard']).default('medium'),
 });
 
 export const bulkCreateRecipeSchema = z.object({
-  recipes: z.array(createRecipeSchema).min(1).max(100),
+  // Capped at 10: each recipe costs one Gemini verification call, so a
+  // 100-recipe bulk import was a 100x quota amplifier for any free account.
+  recipes: z.array(createRecipeSchema).min(1).max(10),
 });
 
 export type BulkCreateRecipeInput = z.infer<typeof bulkCreateRecipeSchema>;
 
-export const updateRecipeSchema = createRecipeSchema.partial();
+// `source` is a server-assigned trust label ('user' / 'ai-generated' /
+// 'seed'), not something an edit may change: omitting it here means a PATCH
+// cannot forge it (the backfill used this exact path to set source 'user').
+export const updateRecipeSchema = createRecipeSchema.omit({ source: true }).partial();
 
 export const listRecipesQuerySchema = z.object({
   q: z.string().trim().min(1).max(100).optional(),

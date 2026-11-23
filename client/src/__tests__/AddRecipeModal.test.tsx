@@ -42,7 +42,6 @@ describe('AddRecipeModal workflow', () => {
     mockedPost.mockReset();
     mockNavigate.mockReset();
     useAuthStore.setState({
-      token: 'fake',
       user: {
         id: 'u1',
         name: 'Test Chef',

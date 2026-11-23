@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { useAuthStore } from '@/stores/authStore';
 
 // ---------------------------------------------------------------------------
 // Shared union types matching the AI service
@@ -216,13 +215,13 @@ export async function streamAssistantChat(
     onError: (err: unknown) => void;
   }
 ): Promise<void> {
-  const token = useAuthStore.getState().token;
   const baseUrl = import.meta.env.VITE_API_URL ?? '/api';
   const response = await fetch(`${baseUrl}/ai/chat/stream`, {
     method: 'POST',
+    // Send the httpOnly auth cookie (the server reads the JWT from it).
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify({
       messages: vars.messages,

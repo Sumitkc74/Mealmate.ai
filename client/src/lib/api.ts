@@ -29,15 +29,9 @@ export function resolveImageUrl(url?: string | null): string | undefined {
 export const api: AxiosInstance = axios.create({
   baseURL,
   timeout: 15_000,
-});
-
-// Attach JWT to outgoing requests.
-api.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().token;
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
+  // Send the httpOnly auth cookie on every request (the JWT lives in the
+  // cookie, not in JS). Required cross-origin (Vercel frontend, Render API).
+  withCredentials: true,
 });
 
 // Auto-logout on 401 and surface a friendly message.
@@ -45,9 +39,9 @@ api.interceptors.response.use(
   (res) => res,
   (error: AxiosError<{ message?: string }>) => {
     if (error.response?.status === 401) {
-      const { token, logout } = useAuthStore.getState();
-      // Only force logout if we actually had a token (not for failed login attempts).
-      if (token) logout();
+      const { user, logout } = useAuthStore.getState();
+      // Only force logout if we actually had a user (not for failed login attempts).
+      if (user) logout();
     }
     return Promise.reject(error);
   }

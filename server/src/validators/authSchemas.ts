@@ -1,11 +1,32 @@
 import { z } from 'zod';
 
+/**
+ * Password floor: 8-128 chars with at least one letter and one number.
+ * Rejects the weakest choices (`password1`, `12345678`) without demanding
+ * symbols (which mostly push users to write passwords down). Used for
+ * register and password reset.
+ */
+const passwordSchema = z
+  .string()
+  .min(8)
+  .max(128)
+  .refine((v) => /[A-Za-z]/.test(v) && /[0-9]/.test(v), {
+    message: 'Password must contain at least one letter and one number',
+  });
+
 export const registerSchema = z.object({
   name: z.string().trim().min(2).max(80),
   email: z.string().trim().toLowerCase().email(),
-  password: z.string().min(8).max(128),
-  termsAccepted: z.boolean().default(true),
-  dietaryConsent: z.boolean().default(true),
+  password: passwordSchema,
+  // Consent must be explicit: no default. The client renders both checkboxes
+  // unchecked and requires them; the API is the enforcement point, so an
+  // omitted or false value is rejected here too.
+  termsAccepted: z.boolean().refine((v) => v === true, {
+    message: 'You must accept the Terms of Service & Privacy Policy',
+  }),
+  dietaryConsent: z.boolean().refine((v) => v === true, {
+    message: 'Dietary consent is required to process dietary and allergy data',
+  }),
   marketingOptIn: z.boolean().default(false),
 });
 
@@ -20,7 +41,7 @@ export const forgotPasswordSchema = z.object({
 
 export const resetPasswordSchema = z.object({
   token: z.string().trim().min(1),
-  password: z.string().min(8).max(128),
+  password: passwordSchema,
 });
 
 const pantryItemSchema = z.object({
