@@ -2,6 +2,7 @@ import request from 'supertest';
 import { createApp } from '../app';
 import { connectInMemoryDB, clearDB, disconnectInMemoryDB } from '../test/db';
 import { User } from '../models/User';
+import { Recipe, COMMUNITY_OWNER_ID } from '../models/Recipe';
 
 const app = createApp();
 
@@ -107,5 +108,34 @@ describe('Auth routes', () => {
     // Verify user no longer exists
     const check = await User.findOne({ email: creds.email });
     expect(check).toBeNull();
+  });
+
+  it('DELETE /api/auth/me keeps the user recipes as community recipes', async () => {
+    const reg = await request(app).post('/api/auth/register').send(creds);
+    const create = await request(app)
+      .post('/api/recipes')
+      .set('Authorization', `Bearer ${reg.body.token}`)
+      .send({
+        title: 'Community Soup',
+        ingredients: [{ name: 'water' }],
+        instructions: ['boil'],
+        prepTime: 5,
+        cookTime: 10,
+        servings: 1,
+      });
+    expect(create.status).toBe(201);
+    const id = create.body.recipe.id ?? create.body.recipe._id;
+
+    const res = await request(app)
+      .delete('/api/auth/me')
+      .set('Authorization', `Bearer ${reg.body.token}`);
+    expect(res.status).toBe(200);
+
+    // The user is gone, but the recipe survives in the shared library,
+    // reassigned to the community owner instead of being deleted.
+    expect(await User.findOne({ email: creds.email })).toBeNull();
+    const recipe = await Recipe.findById(id);
+    expect(recipe).not.toBeNull();
+    expect(String(recipe!.createdBy)).toBe(String(COMMUNITY_OWNER_ID));
   });
 });

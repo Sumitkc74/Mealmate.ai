@@ -118,6 +118,46 @@ describe('AI routes', () => {
       expect(mockedRecommend).not.toHaveBeenCalled();
     });
 
+    it('ranks database recipes by pantry overlap instead of a flat score', async () => {
+      await Recipe.create({
+        title: 'Tomato Soup',
+        slug: 'tomato-soup',
+        ingredients: [{ name: 'tomato' }, { name: 'onion' }],
+        instructions: ['boil'],
+        prepTime: 5,
+        cookTime: 10,
+        servings: 2,
+        difficulty: 'easy',
+      });
+      await Recipe.create({
+        title: 'Plain Rice',
+        slug: 'plain-rice',
+        ingredients: [{ name: 'rice' }],
+        instructions: ['boil'],
+        prepTime: 5,
+        cookTime: 10,
+        servings: 2,
+        difficulty: 'easy',
+      });
+
+      const res = await request(app)
+        .post('/api/ai/recipes/recommend')
+        .send({ scope: 'database', ingredients: ['tomato'] });
+
+      expect(res.status).toBe(200);
+      expect(res.body.strategy).toBe('database');
+      const results = res.body.results as Array<{ title: string; score: number }>;
+      const tomatoSoup = results.find((r) => r.title === 'Tomato Soup')?.score;
+      const plainRice = results.find((r) => r.title === 'Plain Rice')?.score;
+      expect(tomatoSoup).toBeDefined();
+      expect(plainRice).toBeDefined();
+      // The recipe matching a pantry ingredient must score clearly above
+      // one matching none — the old 0.2 floor collapsed both to 20%.
+      expect(tomatoSoup).toBeGreaterThan(plainRice as number);
+      expect(tomatoSoup).toBeGreaterThan(0.5);
+      expect(mockedRecommend).not.toHaveBeenCalled();
+    });
+
     it('falls back to user pantry when no ingredients provided', async () => {
       const token = await authedToken();
       await User.findOneAndUpdate(

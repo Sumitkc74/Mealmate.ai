@@ -168,7 +168,7 @@ function GroceryItemRow({ item, onToggle, showCategoryBadge = false }: GroceryIt
         </span>
       </label>
       <span className="shrink-0 pt-0.5 text-sm font-medium text-gray-600">
-        {item.quantity ?? ''}
+        {typeof item.quantity === 'number' ? Math.round(item.quantity * 10) / 10 : (item.quantity ?? '')}
         {item.unit ? ` ${item.unit}` : ''}
       </span>
     </li>

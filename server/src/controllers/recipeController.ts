@@ -1,6 +1,7 @@
 import { syncRecipesToRag } from '../services/ragSync';
 import type { FilterQuery, SortOrder } from 'mongoose';
-import { Recipe, type IRecipe } from '../models/Recipe';
+import { Types } from 'mongoose';
+import { Recipe, COMMUNITY_OWNER_ID, type IRecipe } from '../models/Recipe';
 import { AppError } from '../utils/AppError';
 import { asyncHandler } from '../utils/asyncHandler';
 import { User } from '../models/User';
@@ -209,8 +210,13 @@ export const updateRecipe = asyncHandler<{ id: string }, unknown, UpdateRecipeIn
     const recipe = await Recipe.findById(req.params.id);
     if (!recipe) throw AppError.notFound('Recipe not found');
 
+    // Community recipes (createdBy is the community owner) may be edited by
+    // any signed-in user; editing transfers ownership to the editor.
+    const isCommunity =
+      recipe.createdBy && String(recipe.createdBy) === String(COMMUNITY_OWNER_ID);
     if (
       recipe.createdBy &&
+      !isCommunity &&
       String(recipe.createdBy) !== req.user.sub &&
       req.user.role !== 'admin'
     ) {
@@ -230,6 +236,9 @@ export const updateRecipe = asyncHandler<{ id: string }, unknown, UpdateRecipeIn
     const verification = await assertRecipeSafe(candidate);
 
     Object.assign(recipe, req.body);
+    if (isCommunity) {
+      recipe.createdBy = new Types.ObjectId(req.user.sub);
+    }
     recipe.tags = applyVerificationTag(recipe.tags, verification.verdict);
     await recipe.save();
     res.json({ success: true, recipe });
@@ -256,8 +265,13 @@ export const deleteRecipe = asyncHandler<{ id: string }>(async (req, res) => {
   const recipe = await Recipe.findById(req.params.id);
   if (!recipe) throw AppError.notFound('Recipe not found');
 
+  // Community recipes belong to the shared library, so any signed-in user
+  // may delete one; other recipes are owner-only.
+  const isCommunity =
+    recipe.createdBy && String(recipe.createdBy) === String(COMMUNITY_OWNER_ID);
   if (
     recipe.createdBy &&
+    !isCommunity &&
     String(recipe.createdBy) !== req.user.sub &&
     req.user.role !== 'admin'
   ) {

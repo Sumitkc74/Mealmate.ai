@@ -103,6 +103,10 @@ export function NutritionPage() {
             <SummaryCard label="Avg / day" value={nutrition.average.calories} unit="kcal" />
             <SummaryCard label="Total protein" value={nutrition.total.protein} unit="g" />
             <SummaryCard label="Avg protein / day" value={nutrition.average.protein} unit="g" />
+            <SummaryCard label="Total carbs" value={nutrition.total.carbs} unit="g" />
+            <SummaryCard label="Avg carbs / day" value={nutrition.average.carbs} unit="g" />
+            <SummaryCard label="Total fat" value={nutrition.total.fat} unit="g" />
+            <SummaryCard label="Avg fat / day" value={nutrition.average.fat} unit="g" />
           </div>
 
           <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">

@@ -367,9 +367,13 @@ function compareRecipeWithPantry(recipe: PantryRankRecipe, pantryIngredients: st
 
   const coverage = matchedIngredients.length / recipeIngs.length;
   const matchPct = Math.round(coverage * 100);
-  const score = Math.max(
-    0.2,
-    Math.min(0.99, coverage * 0.85 + Math.min(0.14, matchedIngredients.length * 0.02) + 0.01)
+  // Score blends a base relevance (every recipe in the library is a real
+  // suggestion) with pantry coverage, so a recipe that matches an ingredient
+  // scores clearly above one that matches none. The old 0.2 floor collapsed
+  // every recipe to the same 20% whenever the pantry was small.
+  const score = Math.min(
+    0.99,
+    0.3 + coverage * 0.6 + Math.min(0.1, matchedIngredients.length * 0.02)
   );
 
   let reason = '';

@@ -1,7 +1,8 @@
 import request from 'supertest';
 import { createApp } from '../app';
 import { connectInMemoryDB, clearDB, disconnectInMemoryDB } from '../test/db';
-import { Recipe } from '../models/Recipe';
+import { Recipe, COMMUNITY_OWNER_ID } from '../models/Recipe';
+import { User } from '../models/User';
 
 const app = createApp();
 
@@ -144,5 +145,52 @@ describe('Recipe routes', () => {
       .set('Authorization', `Bearer ${reg2.body.token}`)
       .send({ servings: 99 });
     expect(res.status).toBe(403);
+  });
+
+  it('lets any signed-in user edit a community recipe and transfers ownership to them', async () => {
+    const create = await request(app)
+      .post('/api/recipes')
+      .set('Authorization', `Bearer ${token}`)
+      .send(baseRecipe);
+    const id = create.body.recipe.id ?? create.body.recipe._id;
+
+    // Simulate the recipe becoming a community recipe (owner account deleted).
+    await Recipe.findByIdAndUpdate(id, { createdBy: COMMUNITY_OWNER_ID });
+
+    const reg2 = await request(app)
+      .post('/api/auth/register')
+      .send({ name: 'Eve', email: 'eve@example.com', password: 'longpass123' });
+    const eve = await User.findOne({ email: 'eve@example.com' });
+
+    const res = await request(app)
+      .patch(`/api/recipes/${id}`)
+      .set('Authorization', `Bearer ${reg2.body.token}`)
+      .send({ servings: 6 });
+    expect(res.status).toBe(200);
+    expect(res.body.recipe.servings).toBe(6);
+    // Ownership moved from the community owner to the editor.
+    expect(String(res.body.recipe.createdBy)).toBe(String(eve!._id));
+  });
+
+  it('lets any signed-in user delete a community recipe', async () => {
+    const create = await request(app)
+      .post('/api/recipes')
+      .set('Authorization', `Bearer ${token}`)
+      .send(baseRecipe);
+    const id = create.body.recipe.id ?? create.body.recipe._id;
+
+    await Recipe.findByIdAndUpdate(id, { createdBy: COMMUNITY_OWNER_ID });
+
+    const reg2 = await request(app)
+      .post('/api/auth/register')
+      .send({ name: 'Eve', email: 'eve@example.com', password: 'longpass123' });
+
+    const del = await request(app)
+      .delete(`/api/recipes/${id}`)
+      .set('Authorization', `Bearer ${reg2.body.token}`);
+    expect(del.status).toBe(200);
+
+    const fetch = await request(app).get(`/api/recipes/${id}`);
+    expect(fetch.status).toBe(404);
   });
 });

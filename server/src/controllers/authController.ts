@@ -3,7 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { User } from '../models/User';
 import { MealPlan } from '../models/MealPlan';
 import { GroceryList } from '../models/GroceryList';
-import { Recipe } from '../models/Recipe';
+import { Recipe, COMMUNITY_OWNER_ID } from '../models/Recipe';
 import { AppError } from '../utils/AppError';
 import { signAccessToken } from '../utils/jwt';
 import { asyncHandler } from '../utils/asyncHandler';
@@ -151,11 +151,14 @@ export const deleteAccount = asyncHandler(async (req: Request, res: Response) =>
   const user = await User.findById(userId);
   if (!user) throw AppError.notFound('User not found');
 
-  // Cascade delete all personal data
+  // Delete personal data, but keep the user's recipes in the shared library:
+  // they are reassigned to the community owner instead of being deleted, so
+  // the library does not lose recipes when someone leaves. A signed-in user
+  // who edits a community recipe becomes its new owner.
   await Promise.all([
     MealPlan.deleteMany({ user: userId }),
     GroceryList.deleteMany({ user: userId }),
-    Recipe.deleteMany({ createdBy: userId }),
+    Recipe.updateMany({ createdBy: userId }, { $set: { createdBy: COMMUNITY_OWNER_ID } }),
     User.findByIdAndDelete(userId),
   ]);
 

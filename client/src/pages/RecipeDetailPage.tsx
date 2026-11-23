@@ -144,6 +144,11 @@ export function RecipeDetailPage() {
 
   const isOwner =
     user && recipe.createdBy && (String(recipe.createdBy) === user.id || user.role === 'admin');
+  // Community recipes (owner is the community sentinel) may be edited or
+  // deleted by any signed-in user; editing transfers ownership to the editor.
+  const COMMUNITY_OWNER_ID = '000000000000000000000000';
+  const isCommunity = recipe.createdBy && String(recipe.createdBy) === COMMUNITY_OWNER_ID;
+  const canEdit = Boolean(isOwner || (user && isCommunity));
   const total = (recipe.prepTime ?? 0) + (recipe.cookTime ?? 0);
   const showImage = Boolean(recipe.imageUrl) && imageOk;
 
@@ -249,6 +254,14 @@ export function RecipeDetailPage() {
         <div>
           <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="font-serif text-3xl font-bold text-text">{recipe.title}</h1>
+            {isCommunity && (
+              <span
+                className="inline-flex items-center rounded border border-line bg-canvas px-2.5 py-0.5 text-xs font-mono text-text-muted"
+                title="This recipe belongs to the community — editing it makes you its owner."
+              >
+                Community recipe
+              </span>
+            )}
             {recipeCookingHistory.length > 0 && (
               <span className="inline-flex items-center rounded border border-line bg-canvas px-2.5 py-0.5 text-xs font-mono text-text-muted">
                 Cooked {recipeCookingHistory.length}x
@@ -279,7 +292,7 @@ export function RecipeDetailPage() {
             <span>Kitchen Mode</span>
           </Button>
 
-          {isOwner && (
+          {canEdit && (
             <div className="flex gap-2">
               <Link to={`/recipes/${recipe.id}/edit`}>
                 <Button variant="secondary" size="sm">

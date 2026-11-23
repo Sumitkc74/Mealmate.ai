@@ -1,5 +1,13 @@
 import mongoose, { Schema, Model, HydratedDocument, Types } from 'mongoose';
 
+/**
+ * Sentinel owner for community recipes. When an account is deleted, its
+ * recipes are reassigned here instead of being deleted, so the shared
+ * library keeps them. Any signed-in user may edit a community recipe, and
+ * editing transfers ownership to the editor.
+ */
+export const COMMUNITY_OWNER_ID = new Types.ObjectId('000000000000000000000000');
+
 export interface IRecipeIngredient {
   name: string;
   quantity?: number;

@@ -436,8 +436,8 @@ export function AiAssistant() {
                 >
                   {qaHistory.length === 0 && (
                     <div className="rounded-md bg-white p-3 text-sm text-gray-600 shadow-sm">
-                      <p className="font-medium text-gray-800 mb-1">Recipe Database Q&A</p>
-                      <p>Ask anything about recipes in our system - ingredients, substitutes, cooking methods. Answers come <span className="font-medium">only</span> from our recipe database.</p>
+                      <p className="font-medium text-gray-800 mb-1">Recipe Q&A</p>
+                      <p>Ask anything about recipes - ingredients, substitutes, cooking methods. Answers come from the AI&apos;s recipe knowledge base, not just the recipes saved in your library.</p>
                       <div className="mt-2 flex flex-wrap gap-1">
                         {[
                           'What can I substitute for eggs?',
@@ -468,7 +468,7 @@ export function AiAssistant() {
                         {item.recipes.length > 0 && (
                           <div className="mt-2 border-t border-gray-100 pt-2">
                             <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-1">
-                              From our database
+                              Related recipes
                             </p>
                             <div className="flex flex-wrap gap-1">
                               {item.recipes.slice(0, 3).map((r: QaRecipeRef, j: number) => (
