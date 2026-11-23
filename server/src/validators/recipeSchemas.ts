@@ -57,6 +57,13 @@ export const recipeIdParamSchema = z.object({
   id: z.string().regex(/^[a-fA-F0-9]{24}$/, 'Invalid recipe id'),
 });
 
+// Used for GET /:id only: a slug or old-style URL (e.g. /recipes/pho-mqa0sdys)
+// is not a 24-hex ObjectId, but that is a "recipe not found", not a bad
+// request — getRecipe turns a non-ObjectId into a 404 instead of a raw 400.
+export const recipeIdOrSlugParamSchema = z.object({
+  id: z.string().trim().min(1, 'Invalid recipe id'),
+});
+
 /**
  * Body for the AI-driven recipe generation endpoint. Used from the planner
  * picker ("Generate with AI" button) when the user types a dish that isn't

@@ -57,6 +57,12 @@ describe('Recipe routes', () => {
     expect(res.body.recipe.totalTime).toBe(15);
   });
 
+  it('returns 404 (not 400) for a slug URL', async () => {
+    const res = await request(app).get('/api/recipes/pho-mqa0sdys');
+    expect(res.status).toBe(404);
+    expect(res.body.message).toMatch(/not found/i);
+  });
+
   it('rejects invalid recipe payload', async () => {
     const res = await request(app)
       .post('/api/recipes')

@@ -350,19 +350,22 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
       <section className="grid gap-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm sm:grid-cols-2">
         <Input
           label="Title"
+          name="title"
           required
           value={form.title}
           onChange={(e) => update_('title', e.target.value)}
         />
         <Input
           label="Cuisine"
+          name="cuisine"
           value={form.cuisine}
           onChange={(e) => update_('cuisine', e.target.value)}
           placeholder="italian, asian, mexican…"
         />
         <div className="sm:col-span-2">
-          <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
+          <label htmlFor="description" className="mb-1 block text-sm font-medium text-gray-700">Description</label>
           <textarea
+            id="description"
             rows={3}
             value={form.description}
             onChange={(e) => update_('description', e.target.value)}
@@ -371,13 +374,15 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
         </div>
         <Input
           label="Tags (comma-separated)"
+          name="tags"
           value={form.tags}
           onChange={(e) => update_('tags', e.target.value)}
           placeholder="vegetarian, quick, gluten-free"
         />
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium text-gray-700">Difficulty</label>
+          <label htmlFor="difficulty" className="text-sm font-medium text-gray-700">Difficulty</label>
           <select
+            id="difficulty"
             value={form.difficulty}
             onChange={(e) => update_('difficulty', e.target.value as Difficulty)}
             className="h-10 rounded-md border border-gray-300 bg-white px-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-200"
@@ -391,6 +396,7 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
           type="number"
           min={0}
           label="Prep time (min)"
+          name="prepTime"
           value={form.prepTime}
           onChange={(e) => update_('prepTime', e.target.value)}
         />
@@ -398,6 +404,7 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
           type="number"
           min={0}
           label="Cook time (min)"
+          name="cookTime"
           value={form.cookTime}
           onChange={(e) => update_('cookTime', e.target.value)}
         />
@@ -405,11 +412,13 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
           type="number"
           min={1}
           label="Servings"
+          name="servings"
           value={form.servings}
           onChange={(e) => update_('servings', e.target.value)}
         />
         <Input
           label="Image URL"
+          name="imageUrl"
           value={form.imageUrl}
           onChange={(e) => update_('imageUrl', e.target.value)}
           placeholder="https://…"
@@ -516,6 +525,7 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
           type="number"
           min={0}
           label="Calories"
+          name="calories"
           value={form.calories}
           onChange={(e) => update_('calories', e.target.value)}
         />
@@ -523,6 +533,7 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
           type="number"
           min={0}
           label="Protein (g)"
+          name="protein"
           value={form.protein}
           onChange={(e) => update_('protein', e.target.value)}
         />
@@ -530,6 +541,7 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
           type="number"
           min={0}
           label="Carbs (g)"
+          name="carbs"
           value={form.carbs}
           onChange={(e) => update_('carbs', e.target.value)}
         />
@@ -537,6 +549,7 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
           type="number"
           min={0}
           label="Fat (g)"
+          name="fat"
           value={form.fat}
           onChange={(e) => update_('fat', e.target.value)}
         />

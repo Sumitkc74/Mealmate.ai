@@ -19,6 +19,7 @@ import {
   updateRecipeSchema,
   listRecipesQuerySchema,
   recipeIdParamSchema,
+  recipeIdOrSlugParamSchema,
   generateRecipeSchema,
   verifyRecipeSchema,
   estimateNutritionSchema,
@@ -32,7 +33,7 @@ router.post('/estimate-nutrition', protect, validate({ body: estimateNutritionSc
 router.post('/generate', protect, validate({ body: generateRecipeSchema }), generateRecipe);
 router.post('/bulk', protect, validate({ body: bulkCreateRecipeSchema }), bulkCreateRecipes);
 router.post('/reverify-pending', protect, reverifyPendingRecipesController);
-router.get('/:id', validate({ params: recipeIdParamSchema }), getRecipe);
+router.get('/:id', validate({ params: recipeIdOrSlugParamSchema }), getRecipe);
 router.post('/', protect, validate({ body: createRecipeSchema }), createRecipe);
 router.patch(
   '/:id',

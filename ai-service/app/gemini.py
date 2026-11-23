@@ -161,6 +161,29 @@ def _configure() -> Any | None:
     return genai
 
 
+def _request_options() -> dict[str, Any]:
+    """Request options that fail fast on Gemini 429 (quota) errors.
+
+    The SDK's default retry retries 429s with exponential backoff for
+    minutes, so a quota-exhausted chat crawls instead of surfacing the
+    honest "quota exceeded" message. This policy still retries transient
+    server errors (503, etc.) but never retries a 429, so the call fails
+    immediately and the quota error is surfaced by _maybe_quota_error.
+    """
+    try:
+        from google.api_core import exceptions as api_exceptions
+        from google.api_core import retry as api_retry
+    except ImportError:  # pragma: no cover - defensive
+        return {}
+
+    def _retryable_excluding_quota(exc: BaseException) -> bool:
+        if isinstance(exc, api_exceptions.ResourceExhausted):
+            return False
+        return api_retry.if_transient_error(exc)
+
+    return {"retry": api_retry.Retry(predicate=_retryable_excluding_quota)}
+
+
 def generate_text(
     user: str,
     system: str = "You are a helpful assistant.",
@@ -206,7 +229,7 @@ def generate_text(
             config["response_mime_type"] = "application/json"
         if max_output_tokens is not None:
             config["max_output_tokens"] = max_output_tokens
-        resp = model.generate_content(user, generation_config=config)
+        resp = model.generate_content(user, generation_config=config, request_options=_request_options())
     except Exception as exc:  # pragma: no cover - network path
         quota = _maybe_quota_error(exc, _model_name())
         _logger.warning("gemini.generate_text failed (%s). Attempting failover to secondary provider...", exc)
@@ -334,7 +357,7 @@ def generate_chat(
             config["response_mime_type"] = "application/json"
         if max_output_tokens is not None:
             config["max_output_tokens"] = max_output_tokens
-        resp = chat.send_message(user_message, generation_config=config)
+        resp = chat.send_message(user_message, generation_config=config, request_options=_request_options())
     except Exception as exc:  # pragma: no cover - network path
         quota = _maybe_quota_error(exc, _model_name())
         _logger.warning("gemini.generate_chat failed (%s). Attempting failover to secondary provider...", exc)
@@ -477,7 +500,7 @@ def generate_chat_stream(
         if max_output_tokens is not None:
             config["max_output_tokens"] = max_output_tokens
 
-        resp = chat.send_message(user_message, generation_config=config, stream=True)
+        resp = chat.send_message(user_message, generation_config=config, stream=True, request_options=_request_options())
         for chunk in resp:
             text = getattr(chunk, "text", None)
             if text:
@@ -529,7 +552,7 @@ def embed_text(text: str) -> list[float] | None:
         return None
 
     try:
-        resp = genai.embed_content(model=_embed_model_name(), content=text)
+        resp = genai.embed_content(model=_embed_model_name(), content=text, request_options=_request_options())
     except Exception:  # pragma: no cover - network path
         fallback = _get_fallback_provider()
         if fallback and fallback.is_available():

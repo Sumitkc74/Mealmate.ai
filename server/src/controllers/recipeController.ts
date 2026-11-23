@@ -59,6 +59,9 @@ export const listRecipes = asyncHandler(async (req, res) => {
   });
 
 export const getRecipe = asyncHandler<{ id: string }>(async (req, res) => {
+  if (!Types.ObjectId.isValid(req.params.id)) {
+    throw AppError.notFound('Recipe not found');
+  }
   const recipe = await Recipe.findById(req.params.id);
   if (!recipe) throw AppError.notFound('Recipe not found');
   res.json({ success: true, recipe });

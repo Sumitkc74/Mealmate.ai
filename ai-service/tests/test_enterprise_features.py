@@ -421,3 +421,20 @@ def test_experiments_endpoints(client: TestClient):
     conv_resp = client.post("/experiments/conversion", json=conv_payload)
     assert conv_resp.status_code == 200
     assert conv_resp.json()["recorded"] is True
+
+
+def test_gemini_request_options_fail_fast_on_quota():
+    """The Gemini retry policy must never retry a 429 (quota) error, so a
+    quota-exhausted chat fails fast with the honest message instead of the
+    SDK retrying for minutes. Transient server errors (503) are still
+    retried."""
+    from google.api_core import exceptions as api_exceptions
+
+    from app import gemini
+
+    opts = gemini._request_options()
+    assert "retry" in opts
+    predicate = opts["retry"]._predicate
+    assert predicate(api_exceptions.ResourceExhausted("429 Quota exceeded")) is False
+    assert predicate(api_exceptions.ServiceUnavailable("503 Unavailable")) is True
+    assert predicate(api_exceptions.InternalServerError("500 boom")) is True
