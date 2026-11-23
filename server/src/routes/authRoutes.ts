@@ -19,6 +19,7 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema,
   updateProfileSchema,
+  deleteAccountSchema,
 } from '../validators/authSchemas';
 
 const router = Router();
@@ -50,6 +51,6 @@ router.post('/logout', logout);
 router.get('/me', protect, me);
 router.patch('/me', protect, validate({ body: updateProfileSchema }), updateProfile);
 router.get('/me/export', protect, exportData);
-router.delete('/me', protect, deleteAccount);
+router.delete('/me', protect, validate({ body: deleteAccountSchema }), deleteAccount);
 
 export default router;

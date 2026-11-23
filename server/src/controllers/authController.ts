@@ -189,23 +189,31 @@ export const exportData = asyncHandler(async (req: Request, res: Response) => {
 
 /**
  * GDPR / CCPA Right to Erasure / Right to be Forgotten:
- * Deletes user profile, personal meal plans, grocery lists, and user-authored recipes.
+ * Deletes the user profile, personal meal plans, and grocery lists, and
+ * clears the auth cookie. Recipes follow the user's choice, read from the
+ * request body: by default they stay in the shared library, reassigned to
+ * the community owner; when `deleteRecipes` is true they are deleted with
+ * the account instead.
  */
 export const deleteAccount = asyncHandler(async (req: Request, res: Response) => {
   if (!req.user) throw AppError.unauthorized();
   const userId = req.user.sub;
+  const deleteRecipes =
+    (req.body as { deleteRecipes?: boolean } | undefined)?.deleteRecipes === true;
 
   const user = await User.findById(userId);
   if (!user) throw AppError.notFound('User not found');
 
-  // Delete personal data, but keep the user's recipes in the shared library:
-  // they are reassigned to the community owner instead of being deleted, so
-  // the library does not lose recipes when someone leaves. A signed-in user
-  // who edits a community recipe becomes its new owner.
+  // Delete personal data. Recipes follow the user's choice: delete them, or
+  // keep them in the shared library reassigned to the community owner so the
+  // library does not lose recipes when someone leaves. A signed-in user who
+  // edits a community recipe becomes its new owner.
   await Promise.all([
     MealPlan.deleteMany({ user: userId }),
     GroceryList.deleteMany({ user: userId }),
-    Recipe.updateMany({ createdBy: userId }, { $set: { createdBy: COMMUNITY_OWNER_ID } }),
+    deleteRecipes
+      ? Recipe.deleteMany({ createdBy: userId })
+      : Recipe.updateMany({ createdBy: userId }, { $set: { createdBy: COMMUNITY_OWNER_ID } }),
     User.findByIdAndDelete(userId),
   ]);
 

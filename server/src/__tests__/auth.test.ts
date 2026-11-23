@@ -4,6 +4,8 @@ import { connectInMemoryDB, clearDB, disconnectInMemoryDB } from '../test/db';
 import { tokenFromCookie } from '../test/auth';
 import { User } from '../models/User';
 import { Recipe, COMMUNITY_OWNER_ID } from '../models/Recipe';
+import { MealPlan } from '../models/MealPlan';
+import { GroceryList } from '../models/GroceryList';
 
 const app = createApp();
 
@@ -149,6 +151,14 @@ describe('Auth routes', () => {
     expect(create.status).toBe(201);
     const id = create.body.recipe.id ?? create.body.recipe._id;
 
+    // Personal data that must be deleted in both branches.
+    const user = await User.findOne({ email: creds.email });
+    const plan = await MealPlan.create({ user: user!._id, weekStartDate: new Date('2026-01-05') });
+    const list = await GroceryList.create({
+      user: user!._id,
+      items: [{ ingredient: 'tomato' }],
+    });
+
     const res = await request(app)
       .delete('/api/auth/me')
       .set('Authorization', `Bearer ${tokenFromCookie(reg)}`);
@@ -156,6 +166,74 @@ describe('Auth routes', () => {
 
     // The user is gone, but the recipe survives in the shared library,
     // reassigned to the community owner instead of being deleted.
+    expect(await User.findOne({ email: creds.email })).toBeNull();
+    const recipe = await Recipe.findById(id);
+    expect(recipe).not.toBeNull();
+    expect(String(recipe!.createdBy)).toBe(String(COMMUNITY_OWNER_ID));
+    // Meal plans and grocery lists are personal: deleted either way.
+    expect(await MealPlan.findById(plan._id)).toBeNull();
+    expect(await GroceryList.findById(list._id)).toBeNull();
+  });
+
+  it('DELETE /api/auth/me with deleteRecipes=true deletes the user recipes too', async () => {
+    const reg = await request(app).post('/api/auth/register').send(creds);
+    const create = await request(app)
+      .post('/api/recipes')
+      .set('Authorization', `Bearer ${tokenFromCookie(reg)}`)
+      .send({
+        title: 'Doomed Soup',
+        ingredients: [{ name: 'water' }],
+        instructions: ['boil'],
+        prepTime: 5,
+        cookTime: 10,
+        servings: 1,
+        imageUrl: 'https://example.com/images/doomed-soup.jpg',
+      });
+    expect(create.status).toBe(201);
+    const id = create.body.recipe.id ?? create.body.recipe._id;
+
+    const user = await User.findOne({ email: creds.email });
+    const plan = await MealPlan.create({ user: user!._id, weekStartDate: new Date('2026-01-05') });
+    const list = await GroceryList.create({
+      user: user!._id,
+      items: [{ ingredient: 'tomato' }],
+    });
+
+    const res = await request(app)
+      .delete('/api/auth/me')
+      .set('Authorization', `Bearer ${tokenFromCookie(reg)}`)
+      .send({ deleteRecipes: true });
+    expect(res.status).toBe(200);
+
+    expect(await User.findOne({ email: creds.email })).toBeNull();
+    expect(await Recipe.findById(id)).toBeNull();
+    expect(await MealPlan.findById(plan._id)).toBeNull();
+    expect(await GroceryList.findById(list._id)).toBeNull();
+  });
+
+  it('DELETE /api/auth/me with deleteRecipes=false keeps the user recipes', async () => {
+    const reg = await request(app).post('/api/auth/register').send(creds);
+    const create = await request(app)
+      .post('/api/recipes')
+      .set('Authorization', `Bearer ${tokenFromCookie(reg)}`)
+      .send({
+        title: 'Kept Soup',
+        ingredients: [{ name: 'water' }],
+        instructions: ['boil'],
+        prepTime: 5,
+        cookTime: 10,
+        servings: 1,
+        imageUrl: 'https://example.com/images/kept-soup.jpg',
+      });
+    expect(create.status).toBe(201);
+    const id = create.body.recipe.id ?? create.body.recipe._id;
+
+    const res = await request(app)
+      .delete('/api/auth/me')
+      .set('Authorization', `Bearer ${tokenFromCookie(reg)}`)
+      .send({ deleteRecipes: false });
+    expect(res.status).toBe(200);
+
     expect(await User.findOne({ email: creds.email })).toBeNull();
     const recipe = await Recipe.findById(id);
     expect(recipe).not.toBeNull();

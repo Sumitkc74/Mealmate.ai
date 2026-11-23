@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
-import type { AnyZodObject, ZodEffects } from 'zod';
+import type { ZodTypeAny } from 'zod';
 
-type Schema = AnyZodObject | ZodEffects<AnyZodObject>;
+type Schema = ZodTypeAny;
 
 interface ValidateOptions {
   body?: Schema;

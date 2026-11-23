@@ -19,9 +19,14 @@ export function ProfilePrivacyPage() {
   const [exportLoading, setExportLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteRecipes, setDeleteRecipes] = useState(false);
   const [confirmInput, setConfirmInput] = useState('');
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // The confirmation word matches the recipe choice: type LEAVE to keep the
+  // recipes in the library, or DELETE to remove them too.
+  const confirmWord = deleteRecipes ? 'DELETE' : 'LEAVE';
 
   async function handleExportData() {
     setExportLoading(true);
@@ -47,15 +52,15 @@ export function ProfilePrivacyPage() {
   }
 
   async function handleDeleteAccount() {
-    if (confirmInput.trim().toUpperCase() !== 'DELETE') {
-      setErrorMessage('Please type DELETE exactly to confirm account deletion.');
+    if (confirmInput.trim().toUpperCase() !== confirmWord) {
+      setErrorMessage(`Please type ${confirmWord} exactly to confirm account deletion.`);
       return;
     }
 
     setDeleteLoading(true);
     setErrorMessage(null);
     try {
-      await api.delete('/auth/me');
+      await api.delete('/auth/me', { data: { deleteRecipes } });
       logout();
       navigate('/', { replace: true });
     } catch (err) {
@@ -164,7 +169,7 @@ export function ProfilePrivacyPage() {
         <div className="space-y-1">
           <h2 className="font-serif text-xl font-semibold text-red-950">Delete Account &amp; Personal Data (Right to be Forgotten)</h2>
           <p className="text-xs text-red-900/80 leading-relaxed">
-            Permanently delete your user profile, authentication credentials, dietary and allergy data, pantry logs, authored recipes, and meal plans. This action is irreversible.
+            Permanently delete your user profile, authentication credentials, dietary and allergy data, pantry logs, and meal plans. Your recipes stay in the shared library as community recipes unless you choose to delete them too. This action is irreversible.
           </p>
         </div>
         <div>
@@ -192,20 +197,56 @@ export function ProfilePrivacyPage() {
                 Confirm Account &amp; Data Deletion
               </h3>
               <p className="mt-2 text-xs text-ink-soft leading-relaxed">
-                This will permanently delete your account, your email, your pantry items, and all saved meal plans in accordance with GDPR Article 17. This cannot be undone.
+                This will permanently delete your account, your email, your pantry items, and all saved meal plans in accordance with GDPR Article 17. Your recipes stay in the shared library as community recipes unless you choose to delete them below. This cannot be undone.
               </p>
             </div>
 
+            <fieldset className="space-y-2">
+              <legend className="text-xs font-medium text-ink">What should happen to your recipes?</legend>
+              <label className="flex items-start gap-2 rounded-xl border border-line bg-canvas px-3 py-2 text-xs cursor-pointer">
+                <input
+                  type="radio"
+                  name="delete-recipes-choice"
+                  value="leave"
+                  checked={!deleteRecipes}
+                  onChange={() => setDeleteRecipes(false)}
+                  className="mt-0.5 accent-red-600"
+                />
+                <span>
+                  <span className="block font-medium text-ink">Leave</span>
+                  <span className="block text-ink-soft">
+                    My recipes stay in the shared library as community recipes, and anyone signed in can edit them.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 rounded-xl border border-line bg-canvas px-3 py-2 text-xs cursor-pointer">
+                <input
+                  type="radio"
+                  name="delete-recipes-choice"
+                  value="delete"
+                  checked={deleteRecipes}
+                  onChange={() => setDeleteRecipes(true)}
+                  className="mt-0.5 accent-red-600"
+                />
+                <span>
+                  <span className="block font-medium text-ink">Delete</span>
+                  <span className="block text-ink-soft">
+                    My recipes are permanently removed from the library.
+                  </span>
+                </span>
+              </label>
+            </fieldset>
+
             <div className="space-y-2">
               <label htmlFor="confirm-delete-input" className="block text-xs font-medium text-ink">
-                Type <strong className="font-bold text-red-700">DELETE</strong> to confirm:
+                Type <strong className="font-bold text-red-700">{confirmWord}</strong> to confirm:
               </label>
               <input
                 id="confirm-delete-input"
                 type="text"
                 value={confirmInput}
                 onChange={(e) => setConfirmInput(e.target.value)}
-                placeholder="DELETE"
+                placeholder={confirmWord}
                 className="w-full rounded-xl border border-line-strong px-3 py-2 text-sm text-ink focus:border-red-600 focus:outline-none focus:ring-2 focus:ring-red-100"
               />
             </div>
@@ -216,6 +257,7 @@ export function ProfilePrivacyPage() {
                 onClick={() => {
                   setShowDeleteModal(false);
                   setConfirmInput('');
+                  setDeleteRecipes(false);
                 }}
                 className="px-3 py-2 text-xs font-medium text-ink-soft hover:text-ink"
               >
@@ -225,7 +267,7 @@ export function ProfilePrivacyPage() {
                 type="button"
                 onClick={handleDeleteAccount}
                 loading={deleteLoading}
-                disabled={confirmInput.trim().toUpperCase() !== 'DELETE'}
+                disabled={confirmInput.trim().toUpperCase() !== confirmWord}
                 className="bg-red-600 hover:bg-red-700 text-white text-xs px-4"
               >
                 Permanently Delete Everything

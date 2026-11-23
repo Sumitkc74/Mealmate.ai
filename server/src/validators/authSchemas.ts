@@ -44,6 +44,19 @@ export const resetPasswordSchema = z.object({
   password: passwordSchema,
 });
 
+/**
+ * Account deletion recipe choice: when true the user's recipes are deleted
+ * with the account; when false or absent they stay in the shared library,
+ * reassigned to the community owner. The body itself is optional — a DELETE
+ * with no body deletes the account and keeps the recipes.
+ */
+export const deleteAccountSchema = z
+  .object({
+    deleteRecipes: z.boolean().optional().default(false),
+  })
+  .optional()
+  .default({});
+
 const pantryItemSchema = z.object({
   ingredient: z.string().trim().toLowerCase().min(1).max(100),
   quantity: z.string().trim().max(20).optional(),
