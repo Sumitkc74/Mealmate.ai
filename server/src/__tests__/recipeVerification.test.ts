@@ -312,5 +312,96 @@ describe('Recipe Verification and Safety Guardrails', () => {
       expect(updated.body.recipe.tags).toContain('needs-review');
     });
   });
+
+  describe('Pending AI re-verification', () => {
+    const verifiedResult = {
+      success: true,
+      is_valid: true,
+      score: 95,
+      verdict: 'verified',
+      summary: 'Recipe verified! Safe, culinary-sound, and ready to publish.',
+      issues: [],
+      detected_allergens: [],
+      suggestions: [],
+    };
+
+    it('marks a recipe published while AI is unavailable as pending AI review', async () => {
+      // Default mock rejects (AI down), so the deterministic fallback runs.
+      const res = await request(app)
+        .post('/api/recipes')
+        .set('Authorization', `Bearer ${token}`)
+        .send(validRecipe);
+
+      expect(res.status).toBe(201);
+      expect(res.body.recipe.tags).toContain('needs-review');
+      expect(res.body.recipe.aiReviewPending).toBe(true);
+    });
+
+    it('re-verifies a pending recipe once AI is back and clears the tag and flag', async () => {
+      const created = await request(app)
+        .post('/api/recipes')
+        .set('Authorization', `Bearer ${token}`)
+        .send(validRecipe);
+      const recipeId = created.body.recipe.id ?? created.body.recipe._id;
+      expect(created.body.recipe.aiReviewPending).toBe(true);
+
+      mockedVerify.mockResolvedValueOnce(verifiedResult);
+      const res = await request(app)
+        .post('/api/recipes/reverify-pending')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body.checked).toBe(1);
+      expect(res.body.cleared).toBe(1);
+      expect(res.body.stillPending).toBe(0);
+
+      const after = await Recipe.findById(recipeId).lean();
+      expect(after?.aiReviewPending).toBe(false);
+      expect(after?.tags).not.toContain('needs-review');
+    });
+
+    it('leaves a pending recipe alone while AI is still unavailable', async () => {
+      const created = await request(app)
+        .post('/api/recipes')
+        .set('Authorization', `Bearer ${token}`)
+        .send(validRecipe);
+      const recipeId = created.body.recipe.id ?? created.body.recipe._id;
+      expect(created.body.recipe.aiReviewPending).toBe(true);
+
+      // Default mock still rejects (AI down).
+      const res = await request(app)
+        .post('/api/recipes/reverify-pending')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body.checked).toBe(0);
+      expect(res.body.stillPending).toBe(1);
+
+      const after = await Recipe.findById(recipeId).lean();
+      expect(after?.aiReviewPending).toBe(true);
+      expect(after?.tags).toContain('needs-review');
+    });
+
+    it('clears the pending flag when an edit is AI-verified', async () => {
+      const created = await request(app)
+        .post('/api/recipes')
+        .set('Authorization', `Bearer ${token}`)
+        .send(validRecipe);
+      const recipeId = created.body.recipe.id ?? created.body.recipe._id;
+      expect(created.body.recipe.aiReviewPending).toBe(true);
+
+      mockedVerify.mockResolvedValueOnce(verifiedResult);
+      const updated = await request(app)
+        .patch(`/api/recipes/${recipeId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Creamy Garlic Butter Pasta' });
+
+      expect(updated.status).toBe(200);
+      expect(updated.body.recipe.aiReviewPending).toBe(false);
+      expect(updated.body.recipe.tags).not.toContain('needs-review');
+    });
+  });
 });
 

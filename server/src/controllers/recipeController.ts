@@ -71,6 +71,8 @@ export const createRecipe = asyncHandler<unknown, unknown, CreateRecipeInput>(
     const recipe = await Recipe.create({
       ...req.body,
       tags: applyVerificationTag(req.body.tags, verification.verdict),
+      source: 'user',
+      aiReviewPending: verification.aiUnavailable === true,
       createdBy: req.user.sub,
     });
     res.status(201).json({ success: true, recipe });
@@ -99,6 +101,7 @@ export const bulkCreateRecipes = asyncHandler<unknown, unknown, BulkCreateRecipe
         ...r,
         tags: applyVerificationTag(r.tags, verification?.verdict),
         source: 'user',
+        aiReviewPending: verification?.aiUnavailable === true,
         createdBy: req.user.sub,
       });
       createdRecipes.push(doc);
@@ -239,6 +242,9 @@ export const updateRecipe = asyncHandler<{ id: string }, unknown, UpdateRecipeIn
     if (isCommunity) {
       recipe.createdBy = new Types.ObjectId(req.user.sub);
     }
+    // The AI has now reviewed this edit (or was unavailable again): the flag
+    // reflects the latest check, so a successful AI review clears it.
+    recipe.aiReviewPending = verification.aiUnavailable === true;
     recipe.tags = applyVerificationTag(recipe.tags, verification.verdict);
     await recipe.save();
     res.json({ success: true, recipe });
@@ -281,4 +287,62 @@ export const deleteRecipe = asyncHandler<{ id: string }>(async (req, res) => {
   await recipe.deleteOne();
   res.json({ success: true, message: 'Recipe deleted' });
   void syncRecipesToRag();
+});
+
+/**
+ * Re-verify recipes whose AI check was unavailable when they were published
+ * (`aiReviewPending`). Runs the full AI verification on each pending recipe.
+ * A verified result clears the needs-review tag; any other verdict keeps the
+ * tag, because the AI has now reviewed it and found a real issue. If the AI
+ * is still unavailable, the recipes stay pending. Returns a summary.
+ */
+export async function reverifyPendingRecipes(): Promise<{
+  checked: number;
+  cleared: number;
+  stillPending: number;
+}> {
+  const pending = await Recipe.find({ aiReviewPending: true });
+  let checked = 0;
+  let cleared = 0;
+  for (const recipe of pending) {
+    let result: VerifyRecipeResponse;
+    try {
+      result = await verifyRecipe({
+        title: recipe.title,
+        description: recipe.description,
+        cuisine: recipe.cuisine,
+        ingredients: (recipe.ingredients || []).map((i) => ({
+          name: i.name,
+          quantity: i.quantity,
+          unit: i.unit,
+        })),
+        instructions: recipe.instructions || [],
+        prepTime: recipe.prepTime,
+        cookTime: recipe.cookTime,
+        servings: recipe.servings,
+      });
+    } catch {
+      // Verification itself failed (not just the AI being down) — leave this
+      // one pending and move on.
+      continue;
+    }
+    if (result.aiUnavailable) {
+      // AI still down — stop here; no point retrying the rest right now.
+      break;
+    }
+    // The AI has now reviewed it: clear the pending flag either way, and let
+    // the tag reflect the latest verdict.
+    recipe.aiReviewPending = false;
+    recipe.tags = applyVerificationTag(recipe.tags, result.verdict);
+    await recipe.save();
+    checked++;
+    if (result.verdict === 'verified') cleared++;
+  }
+  const stillPending = await Recipe.countDocuments({ aiReviewPending: true });
+  return { checked, cleared, stillPending };
+}
+
+export const reverifyPendingRecipesController = asyncHandler(async (_req, res) => {
+  const summary = await reverifyPendingRecipes();
+  res.json({ success: true, ...summary });
 });

@@ -9,6 +9,7 @@ import {
   generateRecipe,
   verifyRecipeController,
   estimateNutritionController,
+  reverifyPendingRecipesController,
 } from '../controllers/recipeController';
 import { validate } from '../middleware/validate';
 import { protect } from '../middleware/authMiddleware';
@@ -30,6 +31,7 @@ router.post('/verify', protect, validate({ body: verifyRecipeSchema }), verifyRe
 router.post('/estimate-nutrition', protect, validate({ body: estimateNutritionSchema }), estimateNutritionController);
 router.post('/generate', protect, validate({ body: generateRecipeSchema }), generateRecipe);
 router.post('/bulk', protect, validate({ body: bulkCreateRecipeSchema }), bulkCreateRecipes);
+router.post('/reverify-pending', protect, reverifyPendingRecipesController);
 router.get('/:id', validate({ params: recipeIdParamSchema }), getRecipe);
 router.post('/', protect, validate({ body: createRecipeSchema }), createRecipe);
 router.patch(

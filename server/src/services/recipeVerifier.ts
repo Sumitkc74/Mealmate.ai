@@ -312,6 +312,7 @@ export async function verifyRecipe(recipe: VerifyRecipeInput): Promise<VerifyRec
       ...deterministic,
       score: Math.min(deterministic.score, 69),
       verdict: 'needs_review',
+      aiUnavailable: true,
       summary:
         'AI verification was unavailable, so title/ingredient coherence was not checked. Review before sharing.',
       issues: [

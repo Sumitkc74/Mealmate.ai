@@ -40,6 +40,8 @@ export interface IRecipe {
   source?: string;
   difficulty: 'easy' | 'medium' | 'hard';
   createdBy?: Types.ObjectId;
+  /** True when the recipe was published while the AI check was unavailable, so it still needs an AI review once the service is back. */
+  aiReviewPending?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -111,6 +113,7 @@ const RecipeSchema = new Schema<IRecipe, RecipeModel, Record<string, never>, Rec
     source: { type: String, trim: true },
     difficulty: { type: String, enum: ['easy', 'medium', 'hard'], default: 'medium' },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    aiReviewPending: { type: Boolean, default: false },
   },
   {
     timestamps: true,

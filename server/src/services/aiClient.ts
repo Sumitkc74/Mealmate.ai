@@ -688,6 +688,8 @@ export interface VerifyRecipeResponse {
   issues: RecipeVerificationIssue[];
   detected_allergens: string[];
   suggestions: string[];
+  /** True when the AI check could not run and the result is a deterministic-only fallback. */
+  aiUnavailable?: boolean;
 }
 
 export async function verifyRecipeWithAiService(
