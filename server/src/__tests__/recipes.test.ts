@@ -21,6 +21,7 @@ const baseRecipe = {
   prepTime: 5,
   cookTime: 10,
   servings: 2,
+  imageUrl: 'https://example.com/images/spaghetti-aglio-e-olio.jpg',
 };
 
 let token: string;
@@ -56,6 +57,16 @@ describe('Recipe routes', () => {
     expect(res.status).toBe(201);
     expect(res.body.recipe.slug).toMatch(/^spaghetti-aglio-e-olio-/);
     expect(res.body.recipe.totalTime).toBe(15);
+  });
+
+  it('rejects a recipe without an image', async () => {
+    const { imageUrl, ...noImageRecipe } = baseRecipe;
+    expect(imageUrl).toBeTruthy();
+    const res = await request(app)
+      .post('/api/recipes')
+      .set('Authorization', `Bearer ${token}`)
+      .send(noImageRecipe);
+    expect(res.status).toBe(400);
   });
 
   it('returns 404 (not 400) for a slug URL', async () => {
@@ -176,6 +187,33 @@ describe('Recipe routes', () => {
     expect(res.status).toBe(200);
     expect(res.body.recipe.servings).toBe(6);
     // Ownership moved from the community owner to the editor.
+    expect(String(res.body.recipe.createdBy)).toBe(String(eve!._id));
+  });
+
+  it('treats a recipe whose owner was deleted outside the app as community-owned', async () => {
+    const create = await request(app)
+      .post('/api/recipes')
+      .set('Authorization', `Bearer ${token}`)
+      .send(baseRecipe);
+    const id = create.body.recipe.id ?? create.body.recipe._id;
+
+    // Simulate a direct database delete of the owner account: the recipe
+    // still points at the deleted user instead of the community owner.
+    const owner = await User.findOne({ email: 'chef@example.com' });
+    await User.deleteOne({ _id: owner!._id });
+
+    const reg2 = await request(app)
+      .post('/api/auth/register')
+      .send({ name: 'Eve', email: 'eve@example.com', password: 'longpass123' , termsAccepted: true, dietaryConsent: true });
+    const eve = await User.findOne({ email: 'eve@example.com' });
+
+    const res = await request(app)
+      .patch(`/api/recipes/${id}`)
+      .set('Authorization', `Bearer ${tokenFromCookie(reg2)}`)
+      .send({ servings: 6 });
+    expect(res.status).toBe(200);
+    expect(res.body.recipe.servings).toBe(6);
+    // Ownership moved from the deleted owner to the editor.
     expect(String(res.body.recipe.createdBy)).toBe(String(eve!._id));
   });
 

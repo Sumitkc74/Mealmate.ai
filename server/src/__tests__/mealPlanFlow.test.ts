@@ -23,6 +23,7 @@ const recipeA = {
   cookTime: 15,
   servings: 2,
   nutrition: { calories: 450, protein: 35, carbs: 20, fat: 18 },
+  imageUrl: 'https://example.com/images/chicken.jpg',
 };
 
 const recipeB = {
@@ -37,6 +38,7 @@ const recipeB = {
   cookTime: 20,
   servings: 2,
   nutrition: { calories: 520, protein: 16, carbs: 90, fat: 8 },
+  imageUrl: 'https://example.com/images/tomato-pasta.jpg',
 };
 
 beforeAll(async () => {

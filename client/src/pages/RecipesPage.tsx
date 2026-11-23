@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -11,6 +11,7 @@ import { AddRecipeModal } from '@/components/recipes/AddRecipeModal';
 import { useRecipes, type ListRecipesParams } from '@/hooks/useRecipes';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useAuthStore } from '@/stores/authStore';
+import { useGuestStore } from '@/stores/guestStore';
 import { extractErrorMessage } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { usePageMetadata } from '@/hooks/usePageMetadata';
@@ -84,10 +85,27 @@ export function RecipesPage() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
-  // Guests can browse, but adding needs an account: send them to sign in
-  // (they come back here after logging in) instead of opening the form.
+  // Guests can browse and add recipes (saved in this browser only); only
+  // spreadsheet import still needs an account (it writes to the server).
   const isAuthed = useAuthStore((s) => Boolean(s.user));
   const navigate = useNavigate();
+
+  // Guest recipes live only in the browser. They get their own clearly
+  // marked section above the shared library, filtered by the same search.
+  const guestRecipes = useGuestStore((s) => s.recipes);
+  const visibleGuestRecipes = useMemo(() => {
+    return guestRecipes.filter((r) => {
+      if (debouncedSearch) {
+        const q = debouncedSearch.toLowerCase();
+        const hay = `${r.title} ${r.cuisine ?? ''} ${(r.tags ?? []).join(' ')}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (cuisine && (r.cuisine ?? '').toLowerCase() !== cuisine.toLowerCase()) return false;
+      if (tag && !(r.tags ?? []).some((t) => t.toLowerCase() === tag.toLowerCase())) return false;
+      if (difficulty && r.difficulty !== difficulty) return false;
+      return true;
+    });
+  }, [guestRecipes, debouncedSearch, cuisine, tag, difficulty]);
 
   function requireAuth(message: string) {
     if (isAuthed) return true;
@@ -96,7 +114,7 @@ export function RecipesPage() {
   }
 
   function handleAddClick() {
-    if (requireAuth('Sign in to add a recipe.')) setIsAddModalOpen(true);
+    setIsAddModalOpen(true);
   }
 
   function handleImportClick() {
@@ -199,6 +217,22 @@ export function RecipesPage() {
           </div>
         )}
       </div>
+
+      {visibleGuestRecipes.length > 0 && (
+        <section aria-label="Your recipes saved in this browser">
+          <div className="mb-2 flex items-baseline justify-between gap-2">
+            <h2 className="text-lg font-semibold text-gray-900">Saved in this browser</h2>
+            <span className="text-xs text-gray-500">
+              Only you can see these — sign in to move them to your account.
+            </span>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {visibleGuestRecipes.map((recipe) => (
+              <RecipeCard key={recipe.id} recipe={recipe} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {isError && (
         <div role="alert" className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">

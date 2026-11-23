@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
+import { useGuestStore } from '@/stores/guestStore';
 import { useGroceryLists } from '@/hooks/useGrocery';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -16,7 +17,11 @@ export function GroceryPage() {
   });
 
   const isAuthed = useAuthStore((s) => Boolean(s.user));
-  const { data, isLoading } = useGroceryLists(isAuthed);
+  const { data: serverData, isLoading: serverLoading } = useGroceryLists(isAuthed);
+  // Guests see the lists generated from their local plans, in this browser only.
+  const guestLists = useGuestStore((s) => s.groceryLists);
+  const data = isAuthed ? serverData : guestLists;
+  const isLoading = isAuthed ? serverLoading : false;
   const [listSort, setListSort] = useState<GroceryListSortOption>('newest');
 
   const sortedLists = useMemo(() => {
@@ -73,6 +78,17 @@ export function GroceryPage() {
           </div>
         )}
       </header>
+
+      {!isAuthed && (
+        <div className="rounded-md border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600">
+          You&apos;re trying MealMate as a guest — lists you generate here are
+          saved in this browser only, and move to your account when you{' '}
+          <Link to="/login" className="font-medium text-brand-700 hover:underline">
+            sign in
+          </Link>
+          .
+        </div>
+      )}
 
       {isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

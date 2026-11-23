@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -12,6 +12,8 @@ import {
 import { useMealPlans } from '@/hooks/useMealPlans';
 import { useWeeklyNutrition } from '@/hooks/useNutrition';
 import { useAuthStore } from '@/stores/authStore';
+import { useGuestStore } from '@/stores/guestStore';
+import { computeGuestWeeklyNutrition } from '@/lib/guestPlan';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Link } from 'react-router-dom';
@@ -27,7 +29,11 @@ export function NutritionPage() {
   });
 
   const isAuthed = useAuthStore((s) => Boolean(s.user));
-  const { data: plans, isLoading: loadingPlans } = useMealPlans(isAuthed);
+  const { data: serverPlans, isLoading: loadingPlans } = useMealPlans(isAuthed);
+  // Guests read their local plans and compute nutrition in the browser from
+  // the stored per-recipe values (no AI estimate, no API call).
+  const guestPlans = useGuestStore((s) => s.mealPlans);
+  const plans = isAuthed ? serverPlans : guestPlans;
   const [planId, setPlanId] = useState<string>('');
 
   // Default to the most recent plan when plans first load.
@@ -35,7 +41,16 @@ export function NutritionPage() {
     if (!planId && plans && plans.length > 0 && plans[0]) setPlanId(plans[0].id);
   }, [plans, planId]);
 
-  const { data: nutrition, isLoading: loadingNutrition } = useWeeklyNutrition(planId || undefined);
+  const { data: serverNutrition, isLoading: serverLoadingNutrition } = useWeeklyNutrition(
+    isAuthed ? planId || undefined : undefined
+  );
+  const selectedPlan = plans?.find((p) => p.id === planId);
+  const guestNutrition = useMemo(
+    () => (!isAuthed && selectedPlan ? computeGuestWeeklyNutrition(selectedPlan) : null),
+    [isAuthed, selectedPlan]
+  );
+  const nutrition = isAuthed ? serverNutrition : guestNutrition;
+  const loadingNutrition = isAuthed ? serverLoadingNutrition : false;
 
   const chartData = nutrition?.days.map((d) => ({
     day: d.day.slice(0, 3),
@@ -93,6 +108,14 @@ export function NutritionPage() {
       </header>
 
       <MedicalDisclaimerBanner compact />
+
+      {!isAuthed && (
+        <div className="rounded-md border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600">
+          Guest view — these numbers come from the nutrition saved on your
+          recipes, computed in this browser. Sign in for AI nutrition
+          estimates.
+        </div>
+      )}
 
       {loadingNutrition || !nutrition ? (
         <Skeleton className="h-64 w-full" />

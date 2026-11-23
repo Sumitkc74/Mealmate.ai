@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { useDeleteRecipe, useRecipe } from '@/hooks/useRecipes';
 import { useAuthStore } from '@/stores/authStore';
+import { useGuestStore, isGuestId } from '@/stores/guestStore';
 import { extractErrorMessage, resolveImageUrl } from '@/lib/api';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { SimilarRecipes } from '@/components/recipes/SimilarRecipes';
@@ -22,7 +23,23 @@ export function RecipeDetailPage() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const isAuthed = useAuthStore((s) => Boolean(s.user));
-  const { data: recipe, isLoading, isError, error } = useRecipe(id);
+  // Guest recipes (id starts with "guest-") live only in the browser; the
+  // API query stays disabled for them and the store is the source of truth.
+  const isGuestRecipe = !!id && isGuestId(id);
+  const {
+    data: serverRecipe,
+    isLoading: serverLoading,
+    isError: serverError,
+    error: serverErrorObj,
+  } = useRecipe(isGuestRecipe ? undefined : id);
+  const guestRecipe = useGuestStore((s) =>
+    isGuestRecipe && id ? s.recipes.find((r) => r.id === id) : undefined
+  );
+  const guestDeleteRecipe = useGuestStore((s) => s.deleteRecipe);
+  const recipe = isGuestRecipe ? guestRecipe : serverRecipe;
+  const isLoading = isGuestRecipe ? false : serverLoading;
+  const isError = isGuestRecipe ? false : serverError;
+  const error = serverErrorObj;
 
   usePageMetadata({
     title: recipe?.title ? `${recipe.title} | MealMate` : 'Recipe Details | MealMate',
@@ -148,7 +165,9 @@ export function RecipeDetailPage() {
   // deleted by any signed-in user; editing transfers ownership to the editor.
   const COMMUNITY_OWNER_ID = '000000000000000000000000';
   const isCommunity = recipe.createdBy && String(recipe.createdBy) === COMMUNITY_OWNER_ID;
-  const canEdit = Boolean(isOwner || (user && isCommunity));
+  // Guest recipes are the viewer's own local recipes — they can edit/delete
+  // them. Guests can never edit/delete server recipes they don't own.
+  const canEdit = Boolean(isOwner || (user && isCommunity) || isGuestRecipe);
   const total = (recipe.prepTime ?? 0) + (recipe.cookTime ?? 0);
   const showImage = Boolean(recipe.imageUrl) && imageOk;
 
@@ -172,6 +191,11 @@ export function RecipeDetailPage() {
   async function handleDelete() {
     if (!recipe) return;
     if (!confirm(`Delete "${recipe.title}"? This cannot be undone.`)) return;
+    if (isGuestRecipe) {
+      guestDeleteRecipe(recipe.id);
+      navigate('/recipes', { replace: true });
+      return;
+    }
     try {
       await del.mutateAsync(recipe.id);
       navigate('/recipes', { replace: true });
@@ -254,6 +278,14 @@ export function RecipeDetailPage() {
         <div>
           <div className="flex flex-wrap items-center gap-2.5">
             <h1 className="font-serif text-3xl font-bold text-text">{recipe.title}</h1>
+            {isGuestRecipe && (
+              <span
+                className="inline-flex items-center rounded border border-line bg-canvas px-2.5 py-0.5 text-xs font-mono text-text-muted"
+                title="This recipe is saved in this browser only — sign in to move it to your account."
+              >
+                Saved in this browser
+              </span>
+            )}
             {isCommunity && (
               <span
                 className="inline-flex items-center rounded border border-line bg-canvas px-2.5 py-0.5 text-xs font-mono text-text-muted"
@@ -581,7 +613,9 @@ export function RecipeDetailPage() {
 
       <MedicalDisclaimerBanner compact />
 
-      {recipe.slug && <SimilarRecipes slug={recipe.slug} currentRecipe={recipe} />}
+      {/* Similar recipes is AI recommender scope, and guest recipes have no
+          server slug, so it is hidden for guest recipes. */}
+      {!isGuestRecipe && recipe.slug && <SimilarRecipes slug={recipe.slug} currentRecipe={recipe} />}
 
       {/* Modals */}
       <IngredientSubstituteModal

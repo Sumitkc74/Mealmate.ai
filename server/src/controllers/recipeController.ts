@@ -210,6 +210,20 @@ export const generateRecipe = asyncHandler<unknown, unknown, GenerateRecipeInput
   }
 );
 
+/**
+ * A recipe is community-owned when its createdBy is the community owner,
+ * or when the owner account no longer exists (deleted outside the app, so
+ * the delete endpoint's reassignment never ran). A recipe with no createdBy
+ * at all is still denied by default — an absent owner must never mean
+ * "open to all".
+ */
+async function isCommunityOwned(recipe: IRecipe): Promise<boolean> {
+  if (!recipe.createdBy) return false;
+  if (String(recipe.createdBy) === String(COMMUNITY_OWNER_ID)) return true;
+  const owner = await User.exists({ _id: recipe.createdBy });
+  return !owner;
+}
+
 export const updateRecipe = asyncHandler<{ id: string }, unknown, UpdateRecipeInput>(
   async (req, res) => {
     if (!req.user) throw AppError.unauthorized();
@@ -220,8 +234,7 @@ export const updateRecipe = asyncHandler<{ id: string }, unknown, UpdateRecipeIn
     // any signed-in user; editing transfers ownership to the editor.
     // Deny by default: a recipe with no createdBy is NOT editable by anyone
     // (an absent owner must never mean "open to all").
-    const isCommunity =
-      recipe.createdBy && String(recipe.createdBy) === String(COMMUNITY_OWNER_ID);
+    const isCommunity = await isCommunityOwned(recipe);
     const isOwner = recipe.createdBy && String(recipe.createdBy) === req.user.sub;
     if (!isCommunity && !isOwner && req.user.role !== 'admin') {
       throw AppError.forbidden('You may only edit your own recipes');
@@ -236,6 +249,9 @@ export const updateRecipe = asyncHandler<{ id: string }, unknown, UpdateRecipeIn
       prepTime: req.body.prepTime ?? recipe.prepTime,
       cookTime: req.body.cookTime ?? recipe.cookTime,
       servings: req.body.servings ?? recipe.servings,
+      // The existing image carries over on a partial edit; an imageless
+      // recipe stays rejected until the edit adds one.
+      imageUrl: req.body.imageUrl ?? recipe.imageUrl,
     };
     const verification = await assertRecipeSafe(candidate);
 
@@ -275,8 +291,7 @@ export const deleteRecipe = asyncHandler<{ id: string }>(async (req, res) => {
   // Community recipes belong to the shared library, so any signed-in user
   // may delete one; other recipes are owner-only. Deny by default: a recipe
   // with no createdBy is NOT deletable by anyone.
-  const isCommunity =
-    recipe.createdBy && String(recipe.createdBy) === String(COMMUNITY_OWNER_ID);
+  const isCommunity = await isCommunityOwned(recipe);
   const isOwner = recipe.createdBy && String(recipe.createdBy) === req.user.sub;
   if (!isCommunity && !isOwner && req.user.role !== 'admin') {
     throw AppError.forbidden('You may only delete your own recipes');
@@ -318,6 +333,7 @@ export async function reverifyPendingRecipes(): Promise<{
         prepTime: recipe.prepTime,
         cookTime: recipe.cookTime,
         servings: recipe.servings,
+        imageUrl: recipe.imageUrl,
       });
     } catch {
       // Verification itself failed (not just the AI being down) — leave this

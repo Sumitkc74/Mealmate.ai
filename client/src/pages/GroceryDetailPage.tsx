@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useAuthStore } from '@/stores/authStore';
+import { useGuestStore } from '@/stores/guestStore';
 import {
   useDeleteGroceryList,
   useGroceryList,
@@ -184,7 +186,23 @@ export function GroceryDetailPage() {
 
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { data: list, isLoading, isError, error } = useGroceryList(id);
+  const isAuthed = useAuthStore((s) => Boolean(s.user));
+  // Guests read their list from the local guest store; signed-in users
+  // fetch theirs from the API (the query stays disabled for guests).
+  const {
+    data: serverList,
+    isLoading: serverLoading,
+    isError: serverError,
+    error: serverErrorObj,
+  } = useGroceryList(isAuthed ? id : undefined);
+  const guestList = useGuestStore((s) => (id ? s.groceryLists.find((l) => l.id === id) : undefined));
+  const guestUpdateItem = useGuestStore((s) => s.updateGroceryItem);
+  const guestDeleteList = useGuestStore((s) => s.deleteGroceryList);
+  const guestTransfer = useGuestStore((s) => s.transferCheckedToPantry);
+  const list = isAuthed ? serverList : guestList;
+  const isLoading = isAuthed ? serverLoading : false;
+  const isError = isAuthed ? serverError : false;
+  const error = serverErrorObj;
   const update = useUpdateGroceryItem();
   const del = useDeleteGroceryList();
   const transfer = useTransferToPantry();
@@ -211,6 +229,16 @@ export function GroceryDetailPage() {
 
   async function handleTransfer() {
     if (!id) return;
+    if (!isAuthed) {
+      const { count } = guestTransfer(id);
+      setTransferMsg(
+        count > 0
+          ? `Added ${count} item${count === 1 ? '' : 's'} to your pantry (saved in this browser)!`
+          : 'No checked items to transfer.'
+      );
+      setTimeout(() => setTransferMsg(null), 5000);
+      return;
+    }
     try {
       const res = await transfer.mutateAsync(id);
       setTransferMsg(res.message || 'Transferred checked items to your pantry!');
@@ -284,12 +312,21 @@ export function GroceryDetailPage() {
 
   function toggle(item: GroceryItem) {
     if (!id) return;
+    if (!isAuthed) {
+      guestUpdateItem(id, item._id, { checked: !item.checked });
+      return;
+    }
     update.mutate({ listId: id, itemId: item._id, patch: { checked: !item.checked } });
   }
 
   async function handleDelete() {
     if (!list) return;
     if (!confirm('Delete this grocery list?')) return;
+    if (!isAuthed) {
+      guestDeleteList(list.id);
+      navigate('/grocery', { replace: true });
+      return;
+    }
     try {
       await del.mutateAsync(list.id);
       navigate('/grocery', { replace: true });

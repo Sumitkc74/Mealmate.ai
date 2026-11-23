@@ -147,7 +147,7 @@ describe('PlannerPage', () => {
     });
 
     renderPlanner();
-    expect(await screen.findByText(/browsing as a guest/i)).toBeInTheDocument();
+    expect(await screen.findByText(/trying MealMate as a guest/i)).toBeInTheDocument();
     const slots = await screen.findAllByTestId(/^slot-/);
     expect(slots).toHaveLength(21);
     expect(get).not.toHaveBeenCalledWith('/mealplans', expect.anything());
@@ -167,7 +167,7 @@ describe('PlannerPage', () => {
     });
 
     renderPlanner();
-    expect(await screen.findByText(/browsing as a guest/i)).toBeInTheDocument();
+    expect(await screen.findByText(/trying MealMate as a guest/i)).toBeInTheDocument();
     // A guest click only ever navigates to login, so the button must render
     // even though the AI service is unreachable (no "AI planner offline" wall).
     const generateBtn = await screen.findByRole('button', { name: /generate my week/i });

@@ -43,4 +43,9 @@ describe('RecipeFormPage', () => {
     expect(screen.getByLabelText('Carbs (g)')).toBeInTheDocument();
     expect(screen.getByLabelText('Fat (g)')).toBeInTheDocument();
   });
+
+  it('requires an image URL — recipes without images are not accepted', () => {
+    renderPage();
+    expect(screen.getByLabelText('Image URL')).toBeRequired();
+  });
 });

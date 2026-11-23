@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
+import { useGuestStore } from '@/stores/guestStore';
 import { useUpdateProfile } from '@/hooks/useProfile';
 import { extractErrorMessage } from '@/lib/api';
 import { SmartPantryPaste } from '@/components/pantry/SmartPantryPaste';
@@ -22,15 +23,26 @@ export function PantryPage() {
 
   const user = useAuthStore((s) => s.user);
   const isAuthed = Boolean(user);
-  const navigate = useNavigate();
   const update = useUpdateProfile();
   const [error, setError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
 
-  // Guests browse with empty data; every write redirects to sign-in.
-  const pantry = user?.pantry ?? [];
-  const dietaryPreferences = user?.dietaryPreferences ?? [];
-  const allergies = user?.allergies ?? [];
+  // Guests use the local guest store (browser only); signed-in users use
+  // their profile. Cooking history stays account-only (recording a cook
+  // needs an account).
+  const guestPantry = useGuestStore((s) => s.pantry);
+  const guestDietary = useGuestStore((s) => s.dietaryPreferences);
+  const guestAllergies = useGuestStore((s) => s.allergies);
+  const guestAddItem = useGuestStore((s) => s.addPantryItem);
+  const guestRemoveItem = useGuestStore((s) => s.removePantryItem);
+  const guestClearPantry = useGuestStore((s) => s.clearPantry);
+  const guestAddTag = useGuestStore((s) => s.addTag);
+  const guestRemoveTag = useGuestStore((s) => s.removeTag);
+  const guestToggleTag = useGuestStore((s) => s.toggleTag);
+
+  const pantry = isAuthed ? (user?.pantry ?? []) : guestPantry;
+  const dietaryPreferences = isAuthed ? (user?.dietaryPreferences ?? []) : guestDietary;
+  const allergies = isAuthed ? (user?.allergies ?? []) : guestAllergies;
   const cookingHistory = user?.cookingHistory ?? [];
 
   function flashSaved() {
@@ -40,7 +52,8 @@ export function PantryPage() {
 
   async function handleAddPantryItem(item: PantryItem) {
     if (!user) {
-      navigate('/login', { state: { from: '/pantry', message: 'Sign in to add pantry items.' } });
+      guestAddItem(item);
+      flashSaved();
       return;
     }
     setError(null);
@@ -59,7 +72,8 @@ export function PantryPage() {
 
   async function handleRemovePantryItem(idx: number) {
     if (!user) {
-      navigate('/login', { state: { from: '/pantry', message: 'Sign in to manage your pantry.' } });
+      guestRemoveItem(idx);
+      flashSaved();
       return;
     }
     setError(null);
@@ -74,7 +88,8 @@ export function PantryPage() {
 
   async function handleClearAllPantry() {
     if (!user) {
-      navigate('/login', { state: { from: '/pantry', message: 'Sign in to manage your pantry.' } });
+      guestClearPantry();
+      flashSaved();
       return;
     }
     setError(null);
@@ -88,7 +103,8 @@ export function PantryPage() {
 
   async function handleAddTag(field: 'dietaryPreferences' | 'allergies', value: string) {
     if (!user) {
-      navigate('/login', { state: { from: '/pantry', message: 'Sign in to save your preferences.' } });
+      guestAddTag(field, value);
+      flashSaved();
       return;
     }
     setError(null);
@@ -106,7 +122,8 @@ export function PantryPage() {
 
   async function handleRemoveTag(field: 'dietaryPreferences' | 'allergies', value: string) {
     if (!user) {
-      navigate('/login', { state: { from: '/pantry', message: 'Sign in to save your preferences.' } });
+      guestRemoveTag(field, value);
+      flashSaved();
       return;
     }
     setError(null);
@@ -123,7 +140,8 @@ export function PantryPage() {
 
   async function handleToggleTag(field: 'dietaryPreferences' | 'allergies', value: string) {
     if (!user) {
-      navigate('/login', { state: { from: '/pantry', message: 'Sign in to save your preferences.' } });
+      guestToggleTag(field, value);
+      flashSaved();
       return;
     }
     setError(null);
@@ -155,18 +173,19 @@ export function PantryPage() {
         </div>
         {savedFlash && (
           <span className="inline-flex items-center rounded border border-line bg-canvas px-3 py-1 text-xs font-mono font-medium text-text animate-fadeIn">
-            <span>Saved to profile</span>
+            <span>{isAuthed ? 'Saved to profile' : 'Saved in this browser'}</span>
           </span>
         )}
       </header>
 
       {!isAuthed && (
         <div className="rounded-md border border-line bg-card px-4 py-3 text-sm text-ink-soft">
-          You&apos;re browsing as a guest — this is what the pantry looks like.{' '}
+          You&apos;re trying MealMate as a guest — items you add here are saved
+          in this browser only, and move to your account when you{' '}
           <Link to="/login" className="font-medium text-brand-700 hover:underline">
-            Sign in
-          </Link>{' '}
-          to track your items, preferences, and cooking history.
+            sign in
+          </Link>
+          .
         </div>
       )}
 

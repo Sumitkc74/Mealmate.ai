@@ -156,7 +156,7 @@ describe('RecipesPage guest browsing', () => {
     expect(await screen.findByText('Pancakes')).toBeInTheDocument();
   });
 
-  it('sends guests to sign in when they try to add a recipe', async () => {
+  it('lets guests open the add-recipe modal instead of sending them to sign in', async () => {
     mockedGet.mockResolvedValue({
       data: { success: true, page: 1, limit: 12, total: 0, pages: 1, items: [] },
     });
@@ -166,7 +166,10 @@ describe('RecipesPage guest browsing', () => {
     const addButtons = await screen.findAllByRole('button', { name: /\+ new recipe/i });
     await user.click(addButtons[0]!);
 
-    expect(await screen.findByText('Login page')).toBeInTheDocument();
+    // Guests can add recipes locally, so the modal opens instead of the
+    // login page.
+    expect(await screen.findByText('Add a New Recipe')).toBeInTheDocument();
+    expect(screen.queryByText('Login page')).not.toBeInTheDocument();
   });
 
   it('hides the pantry-aware suggestions panel from guests', async () => {

@@ -174,6 +174,17 @@ export function verifyRecipeDeterministic(recipe: VerifyRecipeInput): VerifyReci
     score -= 60;
   }
 
+  const imageUrl = (recipe.imageUrl || '').trim();
+  if (!imageUrl) {
+    issues.push({
+      severity: 'error',
+      category: 'completeness',
+      message: 'Recipe must have an image.',
+      field: 'imageUrl',
+    });
+    score -= 50;
+  }
+
   const ingredients = recipe.ingredients || [];
   if (ingredients.length === 0) {
     issues.push({

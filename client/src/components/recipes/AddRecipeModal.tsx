@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useGenerateRecipe, useCreateRecipe, type RecipeInput } from '@/hooks/useRecipes';
 import { useAuthStore } from '@/stores/authStore';
+import { useGuestStore } from '@/stores/guestStore';
 import { extractErrorMessage } from '@/lib/api';
 import type { Difficulty } from '@/types';
 
@@ -47,11 +48,14 @@ const INSPIRATION_CHIPS = [
 export function AddRecipeModal({ open, onClose, onOpenImport, initialPrompt = '' }: Props) {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
+  const isAuthed = Boolean(user);
+  const guestAddRecipe = useGuestStore((s) => s.addRecipe);
 
   const [step, setStep] = useState<ModalStep>('choose');
   const [prompt, setPrompt] = useState(initialPrompt);
   const [respectPreferences, setRespectPreferences] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showAiGate, setShowAiGate] = useState(false);
 
   const [draft, setDraft] = useState<VerifiedDraftState | null>(null);
 
@@ -62,6 +66,7 @@ export function AddRecipeModal({ open, onClose, onOpenImport, initialPrompt = ''
     if (open) {
       setStep('choose');
       setError(null);
+      setShowAiGate(false);
       if (initialPrompt) {
         setPrompt(initialPrompt);
       }
@@ -83,6 +88,12 @@ export function AddRecipeModal({ open, onClose, onOpenImport, initialPrompt = ''
   };
 
   const handleGenerate = async (queryText?: string) => {
+    // AI generation is login-only for guests — show an inline notice
+    // instead of calling the AI service.
+    if (!isAuthed) {
+      setShowAiGate(true);
+      return;
+    }
     const q = (queryText ?? prompt).trim();
     if (!q || q.length < 2) {
       setError('Please enter a dish name or craving (at least 2 characters)');
@@ -156,6 +167,10 @@ export function AddRecipeModal({ open, onClose, onOpenImport, initialPrompt = ''
       setError('At least one instruction step is required');
       return;
     }
+    if (!draft.imageUrl?.trim()) {
+      setError('This recipe has no image — recipes without images are not accepted. Try generating again.');
+      return;
+    }
 
     const payload: RecipeInput = {
       title: draft.title.trim(),
@@ -181,6 +196,14 @@ export function AddRecipeModal({ open, onClose, onOpenImport, initialPrompt = ''
     };
 
     try {
+      // Guests save the draft to the browser only; signed-in users save
+      // it to the shared library via the API.
+      if (!isAuthed) {
+        const saved = guestAddRecipe(payload);
+        onClose();
+        navigate(`/recipes/${saved.id}`);
+        return;
+      }
       const saved = await create.mutateAsync(payload);
       onClose();
       navigate(`/recipes/${saved.id}`);
@@ -307,6 +330,16 @@ export function AddRecipeModal({ open, onClose, onOpenImport, initialPrompt = ''
                       ))}
                     </div>
                   </div>
+
+                  {showAiGate && (
+                    <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      AI generation needs an account.{' '}
+                      <Link to="/login" className="font-semibold underline" onClick={onClose}>
+                        Sign in
+                      </Link>{' '}
+                      to generate recipes, or fill in the form manually below.
+                    </p>
+                  )}
 
                   {user && (user.dietaryPreferences?.length > 0 || user.allergies?.length > 0) && (
                     <label className="flex items-center gap-2 pt-1 text-xs text-ink-soft cursor-pointer">

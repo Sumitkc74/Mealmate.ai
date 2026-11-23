@@ -26,20 +26,17 @@ const nutritionSchema = z
  * image URL is ever rendered as a link, and a tracking-pixel / IP-logging
  * vector for every viewer while it is an <img>.
  */
-const imageUrlSchema = z
-  .string()
-  .refine(
-    (v) => {
-      if (v.startsWith('/')) return !v.startsWith('//');
-      try {
-        return new URL(v).protocol === 'https:';
-      } catch {
-        return false;
-      }
-    },
-    { message: 'imageUrl must be an https URL or a server-relative path' }
-  )
-  .optional();
+const imageUrlSchema = z.string().refine(
+  (v) => {
+    if (v.startsWith('/')) return !v.startsWith('//');
+    try {
+      return new URL(v).protocol === 'https:';
+    } catch {
+      return false;
+    }
+  },
+  { message: 'imageUrl must be an https URL or a server-relative path' }
+);
 
 export const createRecipeSchema = z.object({
   title: z.string().trim().min(2).max(200),
@@ -113,6 +110,9 @@ export const verifyRecipeSchema = z.object({
   prepTime: z.number().int().nonnegative().optional(),
   cookTime: z.number().int().nonnegative().optional(),
   servings: z.number().int().positive().optional(),
+  // Optional here so a missing image reaches the gatekeeper and comes back
+  // as a clean "rejected" verdict instead of a zod 400.
+  imageUrl: imageUrlSchema.optional(),
 });
 
 export const estimateNutritionSchema = z.object({

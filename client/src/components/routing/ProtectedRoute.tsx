@@ -5,11 +5,6 @@ import { useMe } from '@/hooks/useAuth';
 
 /** Feature-specific sign-in notices for the routes that still need an account. */
 const MESSAGES: Array<{ test: (path: string) => boolean; message: string }> = [
-  { test: (p) => p === '/recipes/new', message: 'Sign in to add a recipe.' },
-  {
-    test: (p) => p.startsWith('/recipes/') && p.endsWith('/edit'),
-    message: 'Sign in to edit this recipe.',
-  },
   {
     test: (p) => p === '/privacy/manage',
     message: 'Sign in to manage your personal data.',

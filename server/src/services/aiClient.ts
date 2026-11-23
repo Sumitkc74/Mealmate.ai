@@ -683,6 +683,7 @@ export interface VerifyRecipeInput {
   prepTime?: number;
   cookTime?: number;
   servings?: number;
+  imageUrl?: string;
 }
 
 export interface VerifyRecipeResponse {

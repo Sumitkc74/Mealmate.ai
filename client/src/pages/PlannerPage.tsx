@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
+import { useGuestStore, newGuestId } from '@/stores/guestStore';
+import { aggregateGuestGrocery } from '@/lib/guestPlan';
+import { api } from '@/lib/api';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -68,7 +71,15 @@ export function PlannerPage() {
   const [picker, setPicker] = useState<{ day: DayName; slot: Slot } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const { data: plans, isLoading: loadingPlans } = useMealPlans(isAuthed);
+  // Guests work against the local guest store; signed-in users use the API.
+  const guestPlans = useGuestStore((s) => s.mealPlans);
+  const guestPantry = useGuestStore((s) => s.pantry);
+  const guestCreatePlan = useGuestStore((s) => s.createMealPlan);
+  const guestAssignSlot = useGuestStore((s) => s.assignSlot);
+  const guestAddGroceryList = useGuestStore((s) => s.addGroceryList);
+
+  const { data: serverPlans, isLoading: loadingPlans } = useMealPlans(isAuthed);
+  const plans = isAuthed ? serverPlans : guestPlans;
   const weekIso = toIsoDate(weekStart);
 
   const planForWeek = useMemo<MealPlan | undefined>(() => {
@@ -76,7 +87,12 @@ export function PlannerPage() {
     return plans.find((p) => toIsoDate(new Date(p.weekStartDate)) === weekIso);
   }, [plans, weekIso]);
 
-  const { data: plan, isLoading: loadingPlan } = useMealPlan(planForWeek?.id);
+  // For guests the plan in the store already holds full recipe objects, so
+  // it is the plan. For signed-in users the detail query populates them.
+  const { data: serverPlan, isLoading: loadingPlan } = useMealPlan(
+    isAuthed ? planForWeek?.id : undefined
+  );
+  const plan = isAuthed ? serverPlan : planForWeek;
   const createPlan = useCreateMealPlan();
   const assignSlot = useAssignSlot();
   const genGrocery = useGenerateGrocery();
@@ -96,18 +112,35 @@ export function PlannerPage() {
   async function ensurePlan(): Promise<MealPlan> {
     if (plan) return plan;
     if (planForWeek) return planForWeek;
+    if (!isAuthed) return guestCreatePlan(weekIso);
     return createPlan.mutateAsync({ weekStartDate: weekIso });
   }
 
-  async function handleAssign(day: DayName, slot: Slot, recipeId: string | null) {
-    if (!isAuthed) {
-      navigate('/login', {
-        state: { from: '/planner', message: 'Sign in to add recipes to your plan.' },
-      });
-      return;
+  /** Resolve a picked/dragged recipe id to its full object for guest slots. */
+  async function resolveGuestRecipe(recipeId: string): Promise<Recipe | null> {
+    const guest = useGuestStore.getState().recipes.find((r) => r.id === recipeId);
+    if (guest) return guest;
+    try {
+      const { data } = await api.get<{ recipe: Recipe }>(`/recipes/${recipeId}`);
+      return data.recipe;
+    } catch {
+      return null;
     }
+  }
+
+  async function handleAssign(day: DayName, slot: Slot, recipeId: string | null) {
     setError(null);
     try {
+      if (!isAuthed) {
+        const target = await ensurePlan();
+        const recipe = recipeId ? await resolveGuestRecipe(recipeId) : null;
+        if (recipeId && !recipe) {
+          setError('Could not find that recipe.');
+          return;
+        }
+        guestAssignSlot(target.id, day, slot, recipe);
+        return;
+      }
       const target = await ensurePlan();
       await assignSlot.mutateAsync({ planId: target.id, day, slot, recipeId });
     } catch (err) {
@@ -116,15 +149,24 @@ export function PlannerPage() {
   }
 
   async function handleGenerateGrocery() {
-    if (!isAuthed) {
-      navigate('/login', {
-        state: { from: '/planner', message: 'Sign in to generate a grocery list.' },
-      });
-      return;
-    }
     if (!plan) return;
     setError(null);
     try {
+      if (!isAuthed) {
+        // Local-only: aggregate the plan's ingredients minus the guest pantry.
+        const items = aggregateGuestGrocery(plan, guestPantry);
+        const listId = newGuestId();
+        guestAddGroceryList({
+          id: listId,
+          user: 'guest',
+          mealPlan: plan.id,
+          items,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        navigate(`/grocery/${listId}`);
+        return;
+      }
       const list = await genGrocery.mutateAsync({ mealPlanId: plan.id, usePantry: true });
       navigate(`/grocery/${list.id}`);
     } catch (err) {
@@ -251,11 +293,12 @@ export function PlannerPage() {
 
         {!isAuthed && (
           <div className="rounded-md border border-line bg-card px-4 py-3 text-sm text-ink-soft">
-            You&apos;re browsing as a guest — the planner is yours to explore.{' '}
+            You&apos;re trying MealMate as a guest — plans you build here are
+            saved in this browser only, and move to your account when you{' '}
             <Link to="/login" className="font-medium text-brand-700 hover:underline">
-              Sign in
-            </Link>{' '}
-            to save plans, assign recipes, and generate grocery lists.
+              sign in
+            </Link>
+            . AI week generation still needs an account.
           </div>
         )}
 
@@ -392,7 +435,7 @@ export function PlannerPage() {
                   <Button
                     onClick={handleGenerateGrocery}
                     loading={genGrocery.isPending}
-                    disabled={!plan && isAuthed}
+                    disabled={!plan}
                     className="bg-ink hover:bg-terracotta text-canvas"
                   >
                     Generate grocery list

@@ -2,6 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { useAuthStore } from '@/stores/authStore';
+import { useGuestStore, isGuestId } from '@/stores/guestStore';
 import {
   useCreateRecipe,
   useRecipe,
@@ -88,8 +90,21 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const isEdit = mode === 'edit';
+  const isAuthed = useAuthStore((s) => Boolean(s.user));
 
-  const { data: existing, isLoading: loadingExisting } = useRecipe(isEdit ? id : undefined);
+  // Guests edit only their own local recipes (id starts with "guest-").
+  // A guest opening the edit route for a server recipe is asked to sign in.
+  const isGuestRecipeEdit = isEdit && !!id && isGuestId(id);
+  const { data: serverExisting, isLoading: loadingExisting } = useRecipe(
+    isAuthed && isEdit ? id : undefined
+  );
+  const guestExisting = useGuestStore((s) =>
+    isGuestRecipeEdit && id ? s.recipes.find((r) => r.id === id) : undefined
+  );
+  const guestAddRecipe = useGuestStore((s) => s.addRecipe);
+  const guestUpdateRecipe = useGuestStore((s) => s.updateRecipe);
+  const existing = isAuthed ? serverExisting : guestExisting;
+  const guestEditBlocked = !isAuthed && isEdit && !isGuestRecipeEdit;
   const create = useCreateRecipe();
   const update = useUpdateRecipe(id ?? '');
   const verify = useVerifyRecipe();
@@ -186,6 +201,10 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
       setError('Please add at least one step in the cooking instructions.');
       return null;
     }
+    if (!form.imageUrl.trim()) {
+      setError('Please add an image URL — recipes without images are not accepted.');
+      return null;
+    }
 
     const nutrition = {
       calories: toNum(form.calories),
@@ -215,6 +234,18 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
   }
 
   async function executeSave(payload: RecipeInput) {
+    // Guests save locally, with no AI verification (it runs after sign-in).
+    // The store builds the guest Recipe (id + slug) from the payload.
+    if (!isAuthed) {
+      if (isEdit && id) {
+        guestUpdateRecipe(id, payload);
+        navigate(`/recipes/${id}`);
+      } else {
+        const recipe = guestAddRecipe(payload);
+        navigate(`/recipes/${recipe.id}`);
+      }
+      return;
+    }
     try {
       if (isEdit) {
         const recipe = await update.mutateAsync(payload);
@@ -244,6 +275,7 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
         prepTime: payload.prepTime,
         cookTime: payload.cookTime,
         servings: payload.servings,
+        imageUrl: payload.imageUrl,
       });
       setVerificationResult(res);
       return res;
@@ -255,6 +287,13 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
   }
 
   async function handleVerifyClick() {
+    // AI verification is login-only for guests.
+    if (!isAuthed) {
+      navigate('/login', {
+        state: { from: '/recipes/new', message: 'Sign in to verify a recipe with AI.' },
+      });
+      return;
+    }
     setError(null);
     const payload = buildPayload();
     if (!payload) return;
@@ -263,6 +302,13 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
   }
 
   async function handleEstimateNutrition() {
+    // AI nutrition estimates are login-only for guests.
+    if (!isAuthed) {
+      navigate('/login', {
+        state: { from: '/recipes/new', message: 'Sign in to calculate nutrition estimates.' },
+      });
+      return;
+    }
     setError(null);
     const validIngredients = form.ingredients
       .filter((i) => i.name.trim().length > 0)
@@ -303,8 +349,30 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
     if (!payload) return;
 
     setPendingPayload(payload);
+    // Guests skip AI verification (login-only) and save straight to the
+    // browser; AI verification runs after they sign in and migrate.
+    if (!isAuthed) {
+      await executeSave(payload);
+      return;
+    }
     // Verify recipe before saving to check safety, edibility, and quality
     await runVerification(payload);
+  }
+
+  if (guestEditBlocked) {
+    return (
+      <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+        <h1 className="text-2xl font-bold text-gray-900">Sign in to edit this recipe</h1>
+        <p className="text-sm text-gray-600">
+          This recipe lives in the shared library, so editing it needs an
+          account. Guests can add and edit their own recipes, saved in this
+          browser.
+        </p>
+        <Link to="/login" className="inline-block rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+          Sign in
+        </Link>
+      </div>
+    );
   }
 
   if (isEdit && loadingExisting) {
@@ -325,7 +393,7 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
         </h1>
       </div>
 
-      {!isEdit && (
+      {!isEdit && isAuthed && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-line bg-card p-4 text-sm text-ink shadow-xs">
           <div className="flex items-center gap-3">
             <div>
@@ -422,6 +490,7 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
           value={form.imageUrl}
           onChange={(e) => update_('imageUrl', e.target.value)}
           placeholder="https://…"
+          required
         />
       </section>
 
@@ -564,7 +633,11 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
       <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
         <div className="flex items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400">
           <ShieldCheckIcon className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-          <span>Food safety and recipe verification active before publishing</span>
+          <span>
+            {isAuthed
+              ? 'Food safety and recipe verification active before publishing'
+              : 'Saved in this browser only — AI verification runs after you sign in'}
+          </span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -573,16 +646,18 @@ export function RecipeFormPage({ mode }: RecipeFormPageProps) {
               Cancel
             </Button>
           </Link>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={handleVerifyClick}
-            loading={verify.isPending}
-            className="border-emerald-200 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 flex items-center gap-1.5"
-          >
-            <ShieldCheckIcon className="w-4 h-4 text-emerald-600" />
-            Verify Recipe
-          </Button>
+          {isAuthed && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleVerifyClick}
+              loading={verify.isPending}
+              className="border-emerald-200 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 flex items-center gap-1.5"
+            >
+              <ShieldCheckIcon className="w-4 h-4 text-emerald-600" />
+              Verify Recipe
+            </Button>
+          )}
           <Button type="submit" loading={submitting || verify.isPending}>
             {isEdit ? 'Save changes' : 'Create recipe'}
           </Button>

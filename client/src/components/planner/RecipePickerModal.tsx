@@ -1,5 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useGenerateRecipe, useRecipes } from '@/hooks/useRecipes';
+import { useAuthStore } from '@/stores/authStore';
+import { useGuestStore } from '@/stores/guestStore';
 import { useDebounce } from '@/hooks/useDebounce';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -21,6 +24,19 @@ export function RecipePickerModal({ open, title, onClose, onPick }: RecipePicker
     page: 1,
   });
   const generate = useGenerateRecipe();
+  const isAuthed = useAuthStore((s) => Boolean(s.user));
+
+  // Guest recipes (saved in this browser) are merged into the pick list,
+  // filtered by the same search.
+  const guestRecipes = useGuestStore((s) => s.recipes);
+  const matchingGuests = useMemo(() => {
+    const q = debounced.trim().toLowerCase();
+    return guestRecipes.filter((r) => {
+      if (!q) return true;
+      const hay = `${r.title} ${r.cuisine ?? ''} ${(r.tags ?? []).join(' ')}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [guestRecipes, debounced]);
 
   useEffect(() => {
     if (!open) {
@@ -50,7 +66,8 @@ export function RecipePickerModal({ open, title, onClose, onPick }: RecipePicker
   if (!open) return null;
 
   const trimmedSearch = debounced.trim();
-  const noResults = !isLoading && data !== undefined && data.items.length === 0;
+  const noResults =
+    !isLoading && data !== undefined && data.items.length === 0 && matchingGuests.length === 0;
   const canGenerate = trimmedSearch.length >= 3;
 
   async function handleGenerate() {
@@ -105,6 +122,24 @@ export function RecipePickerModal({ open, title, onClose, onPick }: RecipePicker
 
         <ul className="mt-3 flex-1 space-y-1 overflow-y-auto">
           {isLoading && <li className="p-3 text-sm text-ink-soft">Loading…</li>}
+          {matchingGuests.length > 0 && (
+            <li className="px-2 pt-1 text-[11px] font-semibold uppercase tracking-wider text-ink-soft">
+              Saved in this browser
+            </li>
+          )}
+          {matchingGuests.map((r) => (
+            <li key={r.id}>
+              <button
+                onClick={() => onPick(r.id)}
+                className="flex w-full items-center justify-between rounded p-2 text-left text-sm hover:bg-canvas-soft"
+              >
+                <span className="truncate font-medium text-ink">{r.title}</span>
+                <span className="ml-2 shrink-0 text-xs text-ink-soft">
+                  {(r.prepTime ?? 0) + (r.cookTime ?? 0)} min
+                </span>
+              </button>
+            </li>
+          ))}
           {data?.items.map((r) => (
             <li key={r.id}>
               <button
@@ -134,7 +169,15 @@ export function RecipePickerModal({ open, title, onClose, onPick }: RecipePicker
             </li>
           )}
           <li className="space-y-3 p-3 text-sm">
-            {canGenerate ? (
+            {!isAuthed ? (
+              <p className="text-xs text-ink-soft">
+                AI generation needs an account.{' '}
+                <Link to="/login" className="font-semibold text-brand-700 underline" onClick={onClose}>
+                  Sign in
+                </Link>{' '}
+                to generate a recipe for this search, or pick one above.
+              </p>
+            ) : canGenerate ? (
               <>
                 <p className="text-ink-soft">
                   Can’t find the match? Generate a custom recipe based on{' '}

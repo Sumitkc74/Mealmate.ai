@@ -71,6 +71,7 @@ describe('chatActions', () => {
       },
       difficulty: 'easy',
       source: 'ai-generated',
+      image_url: 'https://example.com/images/turkey-burger.jpg',
     }, 'hamburger');
 
     expect(saved).not.toBeNull();

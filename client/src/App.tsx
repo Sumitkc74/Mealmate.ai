@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ProtectedRoute, PublicOnlyRoute } from '@/components/routing/ProtectedRoute';
 import { useMe } from '@/hooks/useAuth';
+import { useGuestMigrationOnSignIn } from '@/hooks/useGuestMigration';
 
 // Route-level code splitting for performance and bundle size optimization
 const HomePage = lazy(() => import('@/pages/HomePage').then((m) => ({ default: m.HomePage })));
@@ -42,6 +43,8 @@ export default function App() {
   // back, because useMe previously only ran on protected routes and only
   // when a user was already present.
   useMe();
+  // If a guest built local data and then signed in, move it to the account.
+  useGuestMigrationOnSignIn();
   return (
     <Suspense fallback={<RouteFallback />}>
       <Routes>
@@ -53,10 +56,14 @@ export default function App() {
 
           {/* Browsing is public: guests can view the recipe library, recipe
               details, and the planner, pantry, grocery, and nutrition pages.
-              Adding anything (recipes, pantry items, plan slots, grocery
-              lists) still needs an account. */}
+              Guests can also try adding recipes, pantry items, plan slots
+              and grocery lists — that data lives in their browser only until
+              they sign in, when it is migrated to their account. Only the
+              AI features and privacy management still need an account. */}
           <Route path="recipes" element={<RecipesPage />} />
           <Route path="recipes/:id" element={<RecipeDetailPage />} />
+          <Route path="recipes/new" element={<RecipeFormPage mode="create" />} />
+          <Route path="recipes/:id/edit" element={<RecipeFormPage mode="edit" />} />
           <Route path="planner" element={<PlannerPage />} />
           <Route path="pantry" element={<PantryPage />} />
           <Route path="grocery" element={<GroceryPage />} />
@@ -72,8 +79,6 @@ export default function App() {
 
           <Route element={<ProtectedRoute />}>
             <Route path="privacy/manage" element={<ProfilePrivacyPage />} />
-            <Route path="recipes/new" element={<RecipeFormPage mode="create" />} />
-            <Route path="recipes/:id/edit" element={<RecipeFormPage mode="edit" />} />
           </Route>
 
           <Route path="*" element={<NotFoundPage />} />

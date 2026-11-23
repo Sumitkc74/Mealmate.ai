@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PantryPage } from '@/pages/PantryPage';
 import { useAuthStore } from '@/stores/authStore';
+import { useGuestStore } from '@/stores/guestStore';
 import { api } from '@/lib/api';
 import type { User } from '@/types';
 
@@ -32,6 +33,8 @@ function renderWithClient(ui: React.ReactElement) {
 describe('PantryPage & Modern Minimalist Pantry UI', () => {
   beforeEach(() => {
     mockedPatch.mockReset();
+    localStorage.clear();
+    useGuestStore.getState().clearAll();
     useAuthStore.setState({
       user: {
         id: 'u1',
@@ -311,12 +314,26 @@ describe('PantryPage & Modern Minimalist Pantry UI', () => {
     useAuthStore.setState({ user: null });
     renderWithClient(<PantryPage />);
 
-    expect(await screen.findByText(/browsing as a guest/i)).toBeInTheDocument();
+    expect(await screen.findByText(/trying MealMate as a guest/i)).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 1, name: /pantry & preferences/i })).toBeInTheDocument();
     expect(screen.getByText(/smart import and photo capture need an account/i)).toBeInTheDocument();
     expect(screen.getByText(/ai recipe suggestions need an account/i)).toBeInTheDocument();
     // No pantry items are shown, and nothing is posted to the profile.
     expect(mockedPatch).not.toHaveBeenCalled();
+  });
+
+  it('lets guests add pantry items locally without touching the API', async () => {
+    useAuthStore.setState({ user: null });
+    renderWithClient(<PantryPage />);
+    const user = userEvent.setup();
+    const pantrySection = screen.getByRole('region', { name: /in your pantry/i });
+    const pScreen = within(pantrySection);
+    await user.type(pScreen.getByLabelText(/ingredient name/i), 'tomato');
+    await user.click(pScreen.getByRole('button', { name: /^\+ add$/i }));
+
+    expect(await pScreen.findByText('tomato')).toBeInTheDocument();
+    expect(mockedPatch).not.toHaveBeenCalled();
+    expect(useGuestStore.getState().pantry.map((p) => p.ingredient)).toEqual(['tomato']);
   });
 
   it('adds a pantry item when the signed-in user carries no pantry field yet', async () => {

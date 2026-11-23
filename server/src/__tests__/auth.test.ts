@@ -144,6 +144,7 @@ describe('Auth routes', () => {
         prepTime: 5,
         cookTime: 10,
         servings: 1,
+        imageUrl: 'https://example.com/images/community-soup.jpg',
       });
     expect(create.status).toBe(201);
     const id = create.body.recipe.id ?? create.body.recipe._id;

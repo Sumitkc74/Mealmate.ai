@@ -37,6 +37,7 @@ const validRecipe = {
   prepTime: 10,
   cookTime: 15,
   servings: 2,
+  imageUrl: 'https://example.com/images/garlic-butter-pasta.jpg',
 };
 
 beforeAll(async () => {
@@ -133,6 +134,26 @@ describe('Recipe Verification and Safety Guardrails', () => {
       expect(res.body.verdict).toBe('rejected');
       expect(
         res.body.issues.some((i: { category: string }) => i.category === 'coherence')
+      ).toBe(true);
+    });
+
+    it('rejects recipe without an image', async () => {
+      const { imageUrl, ...noImageRecipe } = validRecipe;
+      expect(imageUrl).toBeTruthy();
+
+      const res = await request(app)
+        .post('/api/recipes/verify')
+        .set('Authorization', `Bearer ${token}`)
+        .send(noImageRecipe);
+
+      expect(res.status).toBe(200);
+      expect(res.body.is_valid).toBe(false);
+      expect(res.body.verdict).toBe('rejected');
+      expect(
+        res.body.issues.some(
+          (i: { field: string; severity: string }) =>
+            i.field === 'imageUrl' && i.severity === 'error'
+        )
       ).toBe(true);
     });
   });

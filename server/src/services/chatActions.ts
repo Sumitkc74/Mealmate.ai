@@ -385,6 +385,9 @@ export async function saveGeneratedRecipe(
     if (existing) return existing as IRecipe & { _id: Types.ObjectId };
 
     const imageUrl = await cacheOrPassthrough(gen.image_url ?? null);
+    // Recipes without images are not accepted: if no image could be
+    // produced or cached, the generate fails instead of saving imageless.
+    if (!imageUrl) return null;
     const doc = await Recipe.create({
       title: gen.title.trim().slice(0, 200),
       slug,
