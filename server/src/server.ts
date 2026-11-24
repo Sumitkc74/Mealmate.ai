@@ -1,5 +1,6 @@
 import { syncRecipesToRag } from './services/ragSync';
 import { reverifyPendingRecipes } from './controllers/recipeController';
+import { processPendingDeletions } from './services/accountDeletion';
 import { createApp } from './app';
 import { connectDB, disconnectDB } from './config/db';
 import { env } from './config/env';
@@ -29,6 +30,15 @@ async function bootstrap() {
       () =>
         void reverifyPendingRecipes().catch((err) =>
           logger.error({ err }, 'Pending recipe re-verification failed')
+        ),
+      10 * 60 * 1000
+    ).unref();
+    // Delete accounts whose 30-day deletion window has passed. Same
+    // pattern: a no-op when nothing is due, unref'd, skipped in tests.
+    setInterval(
+      () =>
+        void processPendingDeletions().catch((err) =>
+          logger.error({ err }, 'Pending account deletion sweep failed')
         ),
       10 * 60 * 1000
     ).unref();

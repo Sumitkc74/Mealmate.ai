@@ -3,17 +3,33 @@ import { createHash, randomBytes } from 'node:crypto';
 import { User } from '../models/User';
 import { MealPlan } from '../models/MealPlan';
 import { GroceryList } from '../models/GroceryList';
-import { Recipe, COMMUNITY_OWNER_ID } from '../models/Recipe';
+import { Recipe } from '../models/Recipe';
+import { DeletionRequest } from '../models/DeletionRequest';
+import {
+  deleteUserAccount,
+  cancelPendingDeletionsForUser,
+} from '../services/accountDeletion';
 import { AppError } from '../utils/AppError';
 import { signAccessToken } from '../utils/jwt';
 import { setAuthCookie, clearAuthCookie } from '../utils/authCookie';
 import { asyncHandler } from '../utils/asyncHandler';
-import { frontendBaseUrl, isMailConfigured, sendPasswordResetEmail } from '../services/mailer';
+import {
+  frontendBaseUrl,
+  isMailConfigured,
+  sendPasswordResetEmail,
+  ownerInbox,
+  sendDeletionConfirmEmail,
+  sendDeletionReviewEmail,
+  sendDeletionApprovedToRequester,
+  sendDeletionApprovedToAccountOwner,
+} from '../services/mailer';
 import type {
   RegisterInput,
   LoginInput,
   ForgotPasswordInput,
   ResetPasswordInput,
+  RequestDeletionInput,
+  DeletionTokenInput,
   UpdateProfileInput,
 } from '../validators/authSchemas';
 
@@ -35,6 +51,7 @@ export const register = asyncHandler<unknown, unknown, RegisterInput>(async (req
     termsAcceptedAt: termsAccepted ? new Date() : undefined,
     dietaryConsentAt: dietaryConsent ? new Date() : undefined,
     marketingOptIn: Boolean(marketingOptIn),
+    lastSignInAt: new Date(),
   });
   const token = signAccessToken({ sub: String(user._id), role: user.role, tokenVersion: user.tokenVersion ?? 0 });
 
@@ -83,12 +100,17 @@ export const login = asyncHandler<unknown, unknown, LoginInput>(async (req, res)
     throw AppError.unauthorized('Invalid email or password');
   }
 
-  // Successful login clears any failed-attempt count and lock.
-  if (user.failedLoginAttempts || user.lockUntil) {
-    user.failedLoginAttempts = 0;
-    user.lockUntil = undefined;
-    await user.save();
-  }
+  // Successful login clears any failed-attempt count and lock, and records
+  // the sign-in time (shown in the deletion-request review email).
+  user.failedLoginAttempts = 0;
+  user.lockUntil = undefined;
+  user.lastSignInAt = new Date();
+  await user.save();
+
+  // Signing in cancels any live account-deletion request: the user is back,
+  // so the scheduled deletion (and any unconfirmed or unapproved request)
+  // is moot. The in-app Privacy page is the way to delete instead.
+  await cancelPendingDeletionsForUser(String(user._id));
 
   const token = signAccessToken({ sub: String(user._id), role: user.role, tokenVersion: user.tokenVersion ?? 0 });
   // httpOnly cookie (see register): the token is never returned in the body.
@@ -204,18 +226,12 @@ export const deleteAccount = asyncHandler(async (req: Request, res: Response) =>
   const user = await User.findById(userId);
   if (!user) throw AppError.notFound('User not found');
 
-  // Delete personal data. Recipes follow the user's choice: delete them, or
-  // keep them in the shared library reassigned to the community owner so the
-  // library does not lose recipes when someone leaves. A signed-in user who
-  // edits a community recipe becomes its new owner.
-  await Promise.all([
-    MealPlan.deleteMany({ user: userId }),
-    GroceryList.deleteMany({ user: userId }),
-    deleteRecipes
-      ? Recipe.deleteMany({ createdBy: userId })
-      : Recipe.updateMany({ createdBy: userId }, { $set: { createdBy: COMMUNITY_OWNER_ID } }),
-    User.findByIdAndDelete(userId),
-  ]);
+  // The cleanup itself is shared with the scheduled sweep for locked-out
+  // deletion requests (see services/accountDeletion): whatever one deletes,
+  // the other deletes too.
+  await deleteUserAccount(userId, deleteRecipes);
+  // The account is gone; any pending deletion request for it is moot.
+  await cancelPendingDeletionsForUser(userId);
 
   // The account is gone; its cookie must not keep authenticating anything.
   clearAuthCookie(res);
@@ -225,6 +241,201 @@ export const deleteAccount = asyncHandler(async (req: Request, res: Response) =>
       'Your account and all associated personal data have been permanently deleted in accordance with GDPR / CCPA right to erasure.',
   });
 });
+
+/** How long a deletion confirmation / approval link stays valid. */
+const DELETION_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+/** How long after confirmation / approval the account is deleted. */
+const DELETION_GRACE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+/**
+ * Locked-out account deletion request. The in-app Privacy delete needs a
+ * session, so a user who cannot sign in uses this flow instead.
+ *
+ * Two paths, picked by `cannotAccessEmail`:
+ * - Email-access path: a confirmation link goes to the registered email;
+ *   clicking it schedules the deletion.
+ * - Lost-email path: the request goes to the owner's inbox with the
+ *   account's real details, so the owner can judge the claim; the owner's
+ *   Approve click schedules the deletion.
+ *
+ * The response is always the same generic message, whether or not an
+ * account exists for the email — never reveal that.
+ */
+export const requestDeletion = asyncHandler<unknown, unknown, RequestDeletionInput>(
+  async (req, res) => {
+    // Checked before the user lookup so the response cannot reveal whether
+    // an email is registered (same rule as forgot-password).
+    if (!isMailConfigured()) {
+      throw new AppError('Account deletion requests are not available right now', 503);
+    }
+
+    const { email, contactEmail, name, recipe, deleteRecipes, cannotAccessEmail } =
+      req.body;
+    const user = await User.findOne({ email });
+    if (user) {
+      // A new request supersedes any earlier live one for this user.
+      await cancelPendingDeletionsForUser(String(user._id));
+
+      const token = randomBytes(32).toString('hex');
+      const tokenHash = createHash('sha256').update(token).digest('hex');
+      const expires = new Date(Date.now() + DELETION_TOKEN_TTL_MS);
+
+      if (cannotAccessEmail) {
+        await DeletionRequest.create({
+          user: user._id,
+          contactEmail,
+          claimedName: name,
+          claimedRecipe: recipe || undefined,
+          deleteRecipes,
+          status: 'pending-approval',
+          approveTokenHash: tokenHash,
+          approveTokenExpires: expires,
+        });
+        const [recipes, mealPlanCount, groceryListCount] = await Promise.all([
+          Recipe.find({ createdBy: user._id }).select('title').lean(),
+          MealPlan.countDocuments({ user: user._id }),
+          GroceryList.countDocuments({ user: user._id }),
+        ]);
+        const approveUrl = `${frontendBaseUrl()}/approve-deletion?token=${token}`;
+        await sendDeletionReviewEmail(
+          ownerInbox(),
+          {
+            accountEmail: user.email,
+            accountName: user.name,
+            createdAt: user.createdAt,
+            lastSignInAt: user.lastSignInAt,
+            recipeCount: recipes.length,
+            recipeTitles: recipes.map((r) => r.title),
+            mealPlanCount,
+            groceryListCount,
+            pantryItemCount: user.pantry?.length ?? 0,
+            claimedName: name,
+            claimedRecipe: recipe || undefined,
+            contactEmail,
+            deleteRecipes,
+          },
+          approveUrl
+        );
+      } else {
+        await DeletionRequest.create({
+          user: user._id,
+          contactEmail,
+          claimedName: name,
+          claimedRecipe: recipe || undefined,
+          deleteRecipes,
+          status: 'pending-confirmation',
+          confirmTokenHash: tokenHash,
+          confirmTokenExpires: expires,
+        });
+        const confirmUrl = `${frontendBaseUrl()}/confirm-deletion?token=${token}`;
+        await sendDeletionConfirmEmail(user.email, confirmUrl);
+      }
+    }
+    // Always the same answer: never reveal whether the email is registered.
+    res.json({
+      success: true,
+      message:
+        'Request received. If an account exists for that email, check your inbox for next steps — if you cannot access that inbox, your request has been sent for review instead.',
+    });
+  }
+);
+
+/**
+ * Confirm a deletion request from the email-access path. The link click is
+ * the verification, so this schedules the deletion: deleteAt is now +
+ * 30 days. The token is single-use. Signing in before deleteAt cancels it.
+ */
+export const confirmDeletion = asyncHandler<unknown, unknown, DeletionTokenInput>(
+  async (req, res) => {
+    const { token } = req.body;
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const request = await DeletionRequest.findOne({
+      confirmTokenHash: tokenHash,
+      confirmTokenExpires: { $gt: new Date() },
+      status: 'pending-confirmation',
+    }).select('+confirmTokenHash +confirmTokenExpires');
+    if (!request) throw AppError.badRequest('Invalid or expired confirmation link');
+
+    const user = await User.findById(request.user);
+    if (!user) {
+      // Already gone (e.g. deleted via the Privacy page): nothing to do.
+      request.status = 'completed';
+      await request.save();
+      res.json({
+        success: true,
+        message: 'This account has already been deleted.',
+      });
+      return;
+    }
+
+    request.status = 'scheduled';
+    request.deleteAt = new Date(Date.now() + DELETION_GRACE_MS);
+    request.confirmTokenHash = undefined;
+    request.confirmTokenExpires = undefined;
+    await request.save();
+    res.json({
+      success: true,
+      message:
+        'Your account deletion is scheduled. Signing in at any point before the deletion date cancels it.',
+      deleteAt: request.deleteAt.toISOString(),
+    });
+  }
+);
+
+/**
+ * Approve a deletion request from the lost-email path (owner's click).
+ * On approval the app sends two emails: one to the requesting (contact)
+ * email — no sign-in link, the requester cannot sign in, replying is how
+ * they change their mind — and one to the registered email WITH a sign-in
+ * link, so the real owner can sign in and cancel the deletion.
+ */
+export const approveDeletion = asyncHandler<unknown, unknown, DeletionTokenInput>(
+  async (req, res) => {
+    if (!isMailConfigured()) {
+      throw new AppError('Account deletion requests are not available right now', 503);
+    }
+    const { token } = req.body;
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const request = await DeletionRequest.findOne({
+      approveTokenHash: tokenHash,
+      approveTokenExpires: { $gt: new Date() },
+      status: 'pending-approval',
+    }).select('+approveTokenHash +approveTokenExpires');
+    if (!request) throw AppError.badRequest('Invalid or expired approval link');
+
+    const user = await User.findById(request.user);
+    if (!user) {
+      // Already gone (e.g. deleted via the Privacy page): nothing to do.
+      request.status = 'completed';
+      await request.save();
+      res.json({
+        success: true,
+        message: 'This account has already been deleted.',
+      });
+      return;
+    }
+
+    request.status = 'scheduled';
+    request.deleteAt = new Date(Date.now() + DELETION_GRACE_MS);
+    request.approveTokenHash = undefined;
+    request.approveTokenExpires = undefined;
+    await request.save();
+
+    await sendDeletionApprovedToRequester(request.contactEmail, request.deleteAt);
+    await sendDeletionApprovedToAccountOwner(
+      user.email,
+      request.deleteAt,
+      `${frontendBaseUrl()}/login`
+    );
+    res.json({
+      success: true,
+      message:
+        'Deletion approved. The requester and the account owner have been emailed.',
+      deleteAt: request.deleteAt.toISOString(),
+    });
+  }
+);
 
 /** How long a password-reset link stays valid. */
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour

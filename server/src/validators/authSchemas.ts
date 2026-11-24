@@ -45,6 +45,28 @@ export const resetPasswordSchema = z.object({
 });
 
 /**
+ * Locked-out account deletion request. `email` is the registered account
+ * email; `contactEmail` is where to reach the requester (it may differ —
+ * the requester cannot access the registered inbox). `name` and `recipe`
+ * are what the requester claims, compared against the real account when
+ * the owner reviews a lost-email request. `deleteRecipes` reuses the
+ * DELETE /api/auth/me semantics; `cannotAccessEmail` picks the path.
+ */
+export const requestDeletionSchema = z.object({
+  email: z.string().trim().toLowerCase().email(),
+  contactEmail: z.string().trim().toLowerCase().email(),
+  name: z.string().trim().min(2).max(80),
+  recipe: z.string().trim().max(120).optional(),
+  deleteRecipes: z.boolean().optional().default(false),
+  cannotAccessEmail: z.boolean().optional().default(false),
+});
+
+/** A confirmation or approval link token, posted back by the landing page. */
+export const deletionTokenSchema = z.object({
+  token: z.string().trim().min(1),
+});
+
+/**
  * Account deletion recipe choice: when true the user's recipes are deleted
  * with the account; when false or absent they stay in the shared library,
  * reassigned to the community owner. The body itself is optional — a DELETE
@@ -90,4 +112,6 @@ export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type RequestDeletionInput = z.infer<typeof requestDeletionSchema>;
+export type DeletionTokenInput = z.infer<typeof deletionTokenSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

@@ -74,6 +74,62 @@ export function useResetPassword() {
   });
 }
 
+export interface RequestDeletionInput {
+  email: string;
+  contactEmail: string;
+  name: string;
+  recipe?: string;
+  deleteRecipes: boolean;
+  cannotAccessEmail: boolean;
+}
+
+export interface DeletionTokenResponse {
+  success: boolean;
+  message: string;
+  deleteAt?: string;
+}
+
+/** Locked-out account deletion request (public, no sign-in needed). */
+export function useRequestDeletion() {
+  return useMutation({
+    mutationFn: async (
+      input: RequestDeletionInput
+    ): Promise<{ success: boolean; message: string }> => {
+      const { data } = await api.post<{ success: boolean; message: string }>(
+        '/auth/request-deletion',
+        input
+      );
+      return data;
+    },
+  });
+}
+
+/** Confirm a deletion request from the email-access link. */
+export function useConfirmDeletion() {
+  return useMutation({
+    mutationFn: async (input: { token: string }): Promise<DeletionTokenResponse> => {
+      const { data } = await api.post<DeletionTokenResponse>(
+        '/auth/confirm-deletion',
+        input
+      );
+      return data;
+    },
+  });
+}
+
+/** Approve a deletion request from the owner's review email. */
+export function useApproveDeletion() {
+  return useMutation({
+    mutationFn: async (input: { token: string }): Promise<DeletionTokenResponse> => {
+      const { data } = await api.post<DeletionTokenResponse>(
+        '/auth/approve-deletion',
+        input
+      );
+      return data;
+    },
+  });
+}
+
 export function useMe() {
   const setUser = useAuthStore((s) => s.setUser);
   return useQuery({

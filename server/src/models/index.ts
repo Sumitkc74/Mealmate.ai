@@ -21,3 +21,11 @@ export type {
   GroceryListDocument,
   GroceryListModel,
 } from './GroceryList';
+
+export { DeletionRequest } from './DeletionRequest';
+export type {
+  IDeletionRequest,
+  DeletionRequestStatus,
+  DeletionRequestDocument,
+  DeletionRequestModel,
+} from './DeletionRequest';

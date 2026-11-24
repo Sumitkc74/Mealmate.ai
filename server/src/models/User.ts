@@ -45,6 +45,9 @@ export interface IUser {
   failedLoginAttempts: number;
   /** Account locked until this time after too many failed logins. */
   lockUntil?: Date;
+  /** Last successful sign-in (set on login and register). Shown in the
+   * deletion-request review email so the owner can judge a request. */
+  lastSignInAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -126,6 +129,7 @@ const UserSchema = new Schema<IUser, UserModel, IUserMethods>(
     // never returned; the login handler selects them explicitly.
     failedLoginAttempts: { type: Number, default: 0, select: false },
     lockUntil: { type: Date, select: false },
+    lastSignInAt: { type: Date },
   },
   {
     timestamps: true,

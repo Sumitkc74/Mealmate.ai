@@ -6,6 +6,9 @@ import {
   logout,
   forgotPassword,
   resetPassword,
+  requestDeletion,
+  confirmDeletion,
+  approveDeletion,
   me,
   updateProfile,
   exportData,
@@ -18,6 +21,8 @@ import {
   loginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  requestDeletionSchema,
+  deletionTokenSchema,
   updateProfileSchema,
   deleteAccountSchema,
 } from '../validators/authSchemas';
@@ -46,6 +51,27 @@ router.post(
   authLimiter,
   validate({ body: resetPasswordSchema }),
   resetPassword
+);
+// Locked-out deletion requests are public and unauthenticated, so they use
+// the same tight auth limiter as the other auth endpoints (and the same
+// generic, non-enumerating responses) to deter inbox spam and probing.
+router.post(
+  '/request-deletion',
+  authLimiter,
+  validate({ body: requestDeletionSchema }),
+  requestDeletion
+);
+router.post(
+  '/confirm-deletion',
+  authLimiter,
+  validate({ body: deletionTokenSchema }),
+  confirmDeletion
+);
+router.post(
+  '/approve-deletion',
+  authLimiter,
+  validate({ body: deletionTokenSchema }),
+  approveDeletion
 );
 router.post('/logout', logout);
 router.get('/me', protect, me);

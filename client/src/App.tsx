@@ -15,6 +15,15 @@ const ForgotPasswordPage = lazy(() =>
 const ResetPasswordPage = lazy(() =>
   import('@/pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage }))
 );
+const RequestDeletionPage = lazy(() =>
+  import('@/pages/RequestDeletionPage').then((m) => ({ default: m.RequestDeletionPage }))
+);
+const ConfirmDeletionPage = lazy(() =>
+  import('@/pages/ConfirmDeletionPage').then((m) => ({ default: m.ConfirmDeletionPage }))
+);
+const ApproveDeletionPage = lazy(() =>
+  import('@/pages/ApproveDeletionPage').then((m) => ({ default: m.ApproveDeletionPage }))
+);
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
 const RecipesPage = lazy(() => import('@/pages/RecipesPage').then((m) => ({ default: m.RecipesPage })));
 const RecipeDetailPage = lazy(() => import('@/pages/RecipeDetailPage').then((m) => ({ default: m.RecipeDetailPage })));
@@ -70,11 +79,19 @@ export default function App() {
           <Route path="grocery/:id" element={<GroceryDetailPage />} />
           <Route path="nutrition" element={<NutritionPage />} />
 
+          {/* Deletion confirm/approve landing pages are plain public routes
+              (not PublicOnlyRoute): the confirm link is clicked by a user
+              who cannot sign in, and the approve link by the owner, who may
+              be signed in — neither must redirect away. */}
+          <Route path="confirm-deletion" element={<ConfirmDeletionPage />} />
+          <Route path="approve-deletion" element={<ApproveDeletionPage />} />
+
           <Route element={<PublicOnlyRoute />}>
             <Route path="login" element={<LoginPage />} />
             <Route path="register" element={<RegisterPage />} />
             <Route path="forgot-password" element={<ForgotPasswordPage />} />
             <Route path="reset-password" element={<ResetPasswordPage />} />
+            <Route path="request-deletion" element={<RequestDeletionPage />} />
           </Route>
 
           <Route element={<ProtectedRoute />}>
