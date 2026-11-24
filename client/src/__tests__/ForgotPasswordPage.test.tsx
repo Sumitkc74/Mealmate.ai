@@ -48,6 +48,13 @@ describe('ForgotPasswordPage', () => {
     ).toBeInTheDocument();
   });
 
+  it('links to the locked-out deletion request page', () => {
+    renderPage();
+    const link = screen.getByRole('link', { name: /Request account deletion/i });
+    expect(link).toBeInTheDocument();
+    expect(link.getAttribute('href')).toBe('/request-deletion');
+  });
+
   it('rejects an invalid email without calling the API', async () => {
     const user = userEvent.setup();
     renderPage();

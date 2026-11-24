@@ -86,6 +86,12 @@ export function ForgotPasswordPage() {
             Back to sign in
           </Link>
         </p>
+        <p className="mt-2 text-center text-sm text-ink-soft">
+          Can&apos;t access that email?{' '}
+          <Link to="/request-deletion" className="font-medium text-brand-700 hover:underline">
+            Request account deletion
+          </Link>
+        </p>
       </div>
     </div>
   );

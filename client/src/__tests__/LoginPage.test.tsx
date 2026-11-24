@@ -24,10 +24,8 @@ function renderPage() {
 }
 
 describe('LoginPage', () => {
-  it('links to the locked-out deletion request page', () => {
+  it('does not link to the deletion request page (that link lives on forgot-password)', () => {
     renderPage();
-    const link = screen.getByRole('link', { name: /Request account deletion/i });
-    expect(link).toBeInTheDocument();
-    expect(link.getAttribute('href')).toBe('/request-deletion');
+    expect(screen.queryByRole('link', { name: /Request account deletion/i })).not.toBeInTheDocument();
   });
 });
