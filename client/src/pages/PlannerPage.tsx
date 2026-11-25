@@ -12,6 +12,8 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { RecipeDrawer } from '@/components/planner/RecipeDrawer';
 import { MealSlot } from '@/components/planner/MealSlot';
 import { RecipePickerModal } from '@/components/planner/RecipePickerModal';
+import { AllergyConfirmDialog } from '@/components/planner/AllergyConfirmDialog';
+import { findAllergyConflict, type AllergyConflict } from '@/lib/allergens';
 import { SustainabilityPanel } from '@/components/planner/SustainabilityPanel';
 import { ExportPlanPdfButton } from '@/components/planner/ExportPlanPdfButton';
 import {
@@ -40,6 +42,9 @@ import { usePageMetadata } from '@/hooks/usePageMetadata';
 import type { DayName, Recipe, Slot, MealPlan } from '@/types';
 
 const SLOTS: Slot[] = ['breakfast', 'lunch', 'dinner'];
+// Stable empty reference: returning a fresh `[]` from a zustand selector
+// on every call would look like a changed value and re-render in a loop.
+const NO_ALLERGIES: string[] = [];
 const OBJECTIVES: { value: PlannerObjective; label: string; hint: string }[] = [
   { value: 'balanced', label: 'Balanced', hint: 'similarity + eco + cost + pantry' },
   { value: 'eco', label: 'Eco-first', hint: 'minimise CO₂ footprint' },
@@ -67,9 +72,17 @@ export function PlannerPage() {
 
   const navigate = useNavigate();
   const isAuthed = useAuthStore((s) => Boolean(s.user));
+  const userAllergies = useAuthStore((s) => s.user?.allergies ?? NO_ALLERGIES);
   const [weekStart, setWeekStart] = useState<Date>(() => startOfWeekMondayUTC());
   const [picker, setPicker] = useState<{ day: DayName; slot: Slot } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Pending manual add held behind the allergy warn-and-confirm dialog.
+  const [allergyConfirm, setAllergyConfirm] = useState<{
+    day: DayName;
+    slot: Slot;
+    recipeId: string;
+    conflict: AllergyConflict;
+  } | null>(null);
 
   // Guests work against the local guest store; signed-in users use the API.
   const guestPlans = useGuestStore((s) => s.mealPlans);
@@ -128,8 +141,35 @@ export function PlannerPage() {
     }
   }
 
+  /**
+   * Manual add-to-plan choke point — every manual entry funnels through
+   * here (recipe picker, drag-and-drop from the drawer). Signed-in users
+   * with saved allergies get a warn-and-confirm when the picked recipe
+   * contains a conflicting ingredient; cancelling leaves the slot
+   * untouched. Guests have no saved allergies, so they skip the check.
+   */
   async function handleAssign(day: DayName, slot: Slot, recipeId: string | null) {
     setError(null);
+    if (recipeId && isAuthed && userAllergies.length > 0) {
+      const recipe = await resolveGuestRecipe(recipeId);
+      if (recipe) {
+        const conflict = findAllergyConflict(
+          recipe.ingredients.map((i) => i.name),
+          userAllergies
+        );
+        if (conflict) {
+          setAllergyConfirm({ day, slot, recipeId, conflict });
+          return;
+        }
+      }
+      // Unresolvable recipe: fall through and assign (fail-open) rather
+      // than blocking the user over a lookup failure.
+    }
+    await performAssign(day, slot, recipeId);
+  }
+
+  /** The actual slot write, used by handleAssign and by the dialog's confirm. */
+  async function performAssign(day: DayName, slot: Slot, recipeId: string | null) {
     try {
       if (!isAuthed) {
         const target = await ensurePlan();
@@ -146,6 +186,14 @@ export function PlannerPage() {
     } catch (err) {
       setError(extractErrorMessage(err, 'Could not update slot'));
     }
+  }
+
+  /** Dialog confirm: the user accepted the warning, so add it anyway. */
+  async function confirmAllergyAssign() {
+    if (!allergyConfirm) return;
+    const { day, slot, recipeId } = allergyConfirm;
+    setAllergyConfirm(null);
+    await performAssign(day, slot, recipeId);
   }
 
   async function handleGenerateGrocery() {
@@ -462,6 +510,14 @@ export function PlannerPage() {
             await handleAssign(target.day, target.slot, id);
           }}
         />
+
+        {allergyConfirm && (
+          <AllergyConfirmDialog
+            conflict={allergyConfirm.conflict}
+            onConfirm={confirmAllergyAssign}
+            onCancel={() => setAllergyConfirm(null)}
+          />
+        )}
       </div>
     </DndProvider>
   );

@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PlannerPage } from '../pages/PlannerPage';
 import { useAuthStore } from '@/stores/authStore';
+import { useGuestStore } from '@/stores/guestStore';
 import { api } from '@/lib/api';
 import { startOfWeekMondayUTC, toIsoDate } from '@/lib/week';
 
@@ -49,6 +50,7 @@ describe('PlannerPage', () => {
         allergies: [],
       },
     });
+    useGuestStore.setState({ recipes: [], mealPlans: [], pantry: [], groceryLists: [] });
   });
 
   it('shows empty slots when there is no plan for the current week', async () => {
@@ -173,5 +175,136 @@ describe('PlannerPage', () => {
     const generateBtn = await screen.findByRole('button', { name: /generate my week/i });
     await userEvent.setup().click(generateBtn);
     expect(await screen.findByText('Login page')).toBeInTheDocument();
+  });
+
+  describe('manual add allergy warn-and-confirm', () => {
+    const weekIso = toIsoDate(startOfWeekMondayUTC());
+    const emptyPlan = {
+      id: 'p1',
+      user: 'u1',
+      weekStartDate: weekIso,
+      days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(
+        (day) => ({ day })
+      ),
+    };
+    const pancakes = {
+      id: 'r1',
+      title: 'Fluffy Pancakes',
+      slug: 'fluffy-pancakes',
+      ingredients: [
+        { name: 'flour' },
+        { name: 'milk' },
+        { name: 'egg' },
+        { name: 'butter' },
+        { name: 'sugar' },
+      ],
+      instructions: ['Mix and cook.'],
+      prepTime: 5,
+      cookTime: 10,
+      servings: 2,
+      tags: [],
+      difficulty: 'easy',
+    };
+    const stirFry = {
+      id: 'r2',
+      title: 'Veggie Stir Fry',
+      slug: 'veggie-stir-fry',
+      ingredients: [{ name: 'rice' }, { name: 'tomato' }, { name: 'garlic' }],
+      instructions: ['Stir and fry.'],
+      prepTime: 5,
+      cookTime: 10,
+      servings: 2,
+      tags: [],
+      difficulty: 'easy',
+    };
+
+    function mockPlannerGets(picked: typeof pancakes | typeof stirFry) {
+      get.mockImplementation((url: string) => {
+        if (url === '/mealplans') return Promise.resolve({ data: { items: [emptyPlan] } });
+        if (url.startsWith('/mealplans/')) return Promise.resolve({ data: { plan: emptyPlan } });
+        if (url === `/recipes/${picked.id}`) return Promise.resolve({ data: { recipe: picked } });
+        if (url === '/recipes') {
+          return Promise.resolve({
+            data: { items: [picked], total: 1, pages: 1, page: 1, limit: 20 },
+          });
+        }
+        return Promise.resolve({ data: { items: [], total: 0, pages: 1, page: 1, limit: 25 } });
+      });
+      post.mockResolvedValue({ data: { plan: emptyPlan } });
+    }
+
+    function setAllergies(allergies: string[]) {
+      useAuthStore.setState({
+        user: {
+          id: 'u1',
+          name: 'Test',
+          email: 't@x.com',
+          role: 'user',
+          pantry: [],
+          dietaryPreferences: [],
+          allergies,
+        },
+      });
+    }
+
+    async function pickRecipeFromSlot(title: RegExp) {
+      const user = userEvent.setup();
+      renderPlanner();
+      await screen.findAllByTestId(/^slot-/);
+      const slot = screen.getByTestId('slot-Monday-breakfast');
+      await user.click(within(slot).getByRole('button', { name: '+ Add' }));
+      const pickBtn = await screen.findByRole('button', { name: title });
+      await user.click(pickBtn);
+      return user;
+    }
+
+    it('shows the allergy warning and does NOT add the recipe when cancelled', async () => {
+      setAllergies(['dairy']);
+      mockPlannerGets(pancakes);
+      const user = await pickRecipeFromSlot(/fluffy pancakes/i);
+
+      const dialog = await screen.findByRole('dialog', { name: /allergy warning/i });
+      expect(dialog).toHaveTextContent(/contains milk/i);
+      expect(dialog).toHaveTextContent(/dairy allergy/i);
+      // Nothing has been written to the plan yet.
+      expect(post).not.toHaveBeenCalled();
+
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog', { name: /allergy warning/i })).not.toBeInTheDocument();
+      });
+      // Cancelling leaves the slot untouched — no assign call at all.
+      expect(post).not.toHaveBeenCalled();
+    });
+
+    it('adds the recipe when the warning is confirmed', async () => {
+      setAllergies(['dairy']);
+      mockPlannerGets(pancakes);
+      const user = await pickRecipeFromSlot(/fluffy pancakes/i);
+
+      const dialog = await screen.findByRole('dialog', { name: /allergy warning/i });
+      await user.click(within(dialog).getByRole('button', { name: 'Add anyway' }));
+
+      await waitFor(() => {
+        expect(post).toHaveBeenCalledWith(
+          '/mealplans/p1/assign',
+          expect.objectContaining({ day: 'Monday', slot: 'breakfast', recipeId: 'r1' })
+        );
+      });
+    });
+
+    it('adds a safe recipe with no warning', async () => {
+      setAllergies(['dairy']);
+      mockPlannerGets(stirFry);
+      await pickRecipeFromSlot(/veggie stir fry/i);
+
+      await waitFor(() => {
+        expect(post).toHaveBeenCalledWith(
+          '/mealplans/p1/assign',
+          expect.objectContaining({ day: 'Monday', slot: 'breakfast', recipeId: 'r2' })
+        );
+      });
+      expect(screen.queryByRole('dialog', { name: /allergy warning/i })).not.toBeInTheDocument();
+    });
   });
 });
