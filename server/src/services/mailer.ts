@@ -2,41 +2,24 @@ import { env } from '../config/env';
 import { logger } from '../config/logger';
 
 /**
- * Outgoing mail goes through the SendGrid v3 Mail Send HTTP API, not SMTP:
- * Gmail's SMTP port is blocked from Render (the connection hung for ~2 min,
- * then 500ed, breaking forgot-password and the deletion-request emails),
- * while an HTTPS POST to api.sendgrid.com works. SendGrid was chosen over
- * Resend because a single sender address (mealmate.ai1@gmail.com) can be
- * verified by clicking a link in that inbox — no DNS records or domain
- * verification needed to reach arbitrary users. Only the transport changed
- * — the senders, subjects and bodies are exactly as they were.
+ * Outgoing mail goes through the Resend HTTP API, not SMTP: Gmail's SMTP
+ * port is blocked from Render (the connection hung for ~2 min, then 500ed,
+ * breaking forgot-password and the deletion-request emails), while an
+ * HTTPS POST to api.resend.com works. Only the transport changed — the
+ * senders, subjects and bodies are exactly as they were.
  */
-const SENDGRID_API_URL = 'https://api.sendgrid.com/v3/mail/send';
-/** Fail fast: a SendGrid call that cannot complete in 10s is treated as
+const RESEND_API_URL = 'https://api.resend.com/emails';
+/** Fail fast: a Resend call that cannot complete in 10s is treated as
  * failed, instead of hanging the request for minutes as SMTP did. */
-const SENDGRID_TIMEOUT_MS = 10_000;
+const RESEND_TIMEOUT_MS = 10_000;
 
-/** True when a SendGrid API key is configured; otherwise mail is disabled. */
+/** True when a Resend API key is configured; otherwise mail is disabled. */
 export function isMailConfigured(): boolean {
-  return Boolean(env.SENDGRID_API_KEY);
+  return Boolean(env.RESEND_API_KEY);
 }
 
 /**
- * Parse a "Name <address>" string (or a bare address) into the SendGrid
- * from object. SENDGRID_FROM is the verified single sender.
- */
-function parseFrom(from: string): { name?: string; email: string } {
-  const match = from.match(/^(.*?)\s*<([^<>]+)>\s*$/);
-  if (match) {
-    const name = (match[1] ?? '').trim().replace(/^["']|["']$/g, '');
-    const email = (match[2] ?? '').trim();
-    return name ? { name, email } : { email };
-  }
-  return { email: from.trim() };
-}
-
-/**
- * Send one email through SendGrid. Throws on a non-2xx response (so the
+ * Send one email through Resend. Throws on a non-2xx response (so the
  * endpoint still fails, but fast) or on a timeout / network error.
  */
 async function sendEmail(args: {
@@ -45,26 +28,24 @@ async function sendEmail(args: {
   text: string;
   html: string;
 }): Promise<void> {
-  const res = await fetch(SENDGRID_API_URL, {
+  const res = await fetch(RESEND_API_URL, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${env.SENDGRID_API_KEY}`,
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      personalizations: [{ to: [{ email: args.to }] }],
-      from: parseFrom(env.SENDGRID_FROM),
+      from: env.RESEND_FROM,
+      to: args.to,
       subject: args.subject,
-      content: [
-        { type: 'text/plain', value: args.text },
-        { type: 'text/html', value: args.html },
-      ],
+      html: args.html,
+      text: args.text,
     }),
-    signal: AbortSignal.timeout(SENDGRID_TIMEOUT_MS),
+    signal: AbortSignal.timeout(RESEND_TIMEOUT_MS),
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
-    throw new Error(`SendGrid email failed (${res.status}): ${detail.slice(0, 200)}`);
+    throw new Error(`Resend email failed (${res.status}): ${detail.slice(0, 200)}`);
   }
 }
 

@@ -18,16 +18,15 @@ const EnvSchema = z.object({
   // Base URL of the frontend, used to build links sent in emails (e.g. the
   // password-reset link). Falls back to CORS_ORIGIN when unset.
   FRONTEND_URL: z.string().url().optional(),
-  // Outgoing mail goes through the SendGrid v3 Mail Send HTTP API. All
-  // optional: when SENDGRID_API_KEY is missing, mail is disabled and the
-  // forgot-password endpoint answers 503 instead of pretending to send.
-  // SENDGRID_FROM is a full "Name <address>" string (or a bare address)
-  // and must be a sender verified in SendGrid — a single sender address
-  // is verified by clicking a link in its inbox, no DNS records or
-  // domain verification needed. OWNER_EMAIL is where deletion-review
-  // requests go.
-  SENDGRID_API_KEY: z.string().optional(),
-  SENDGRID_FROM: z.string().default('MealMate <mealmate.ai1@gmail.com>'),
+  // Outgoing mail goes through the Resend HTTP API. All optional: when
+  // RESEND_API_KEY is missing, mail is disabled and the forgot-password
+  // endpoint answers 503 instead of pretending to send. RESEND_FROM is a
+  // full "Name <address>" string; without a verified domain Resend only
+  // lets the sandbox sender onboarding@resend.dev deliver to the Resend
+  // account's own address, so a verified domain is needed to reach
+  // arbitrary users. OWNER_EMAIL is where deletion-review requests go.
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM: z.string().default('MealMate <onboarding@resend.dev>'),
   OWNER_EMAIL: z.string().email().optional(),
   // Legacy Gmail SMTP settings. The mailer no longer uses SMTP (its port
   // is blocked from Render); these stay declared only so OWNER_EMAIL can
