@@ -1,25 +1,52 @@
-import nodemailer from 'nodemailer';
-import type { Transporter } from 'nodemailer';
 import { env } from '../config/env';
 import { logger } from '../config/logger';
 
-let transporter: Transporter | null = null;
+/**
+ * Outgoing mail goes through the Resend HTTP API, not SMTP: Gmail's SMTP
+ * port is blocked from Render (the connection hung for ~2 min, then 500ed,
+ * breaking forgot-password and the deletion-request emails), while an
+ * HTTPS POST to api.resend.com works. Only the transport changed — the
+ * senders, subjects and bodies are exactly as they were.
+ */
+const RESEND_API_URL = 'https://api.resend.com/emails';
+/** Fail fast: a Resend call that cannot complete in 10s is treated as
+ * failed, instead of hanging the request for minutes as SMTP did. */
+const RESEND_TIMEOUT_MS = 10_000;
 
-/** True when SMTP credentials are configured; otherwise mail is disabled. */
+/** True when a Resend API key is configured; otherwise mail is disabled. */
 export function isMailConfigured(): boolean {
-  return Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
+  return Boolean(env.RESEND_API_KEY);
 }
 
-function getTransporter(): Transporter {
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: env.SMTP_HOST,
-      port: env.SMTP_PORT,
-      secure: env.SMTP_SECURE,
-      auth: { user: env.SMTP_USER, pass: env.SMTP_PASS },
-    });
+/**
+ * Send one email through Resend. Throws on a non-2xx response (so the
+ * endpoint still fails, but fast) or on a timeout / network error.
+ */
+async function sendEmail(args: {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+}): Promise<void> {
+  const res = await fetch(RESEND_API_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: env.RESEND_FROM,
+      to: args.to,
+      subject: args.subject,
+      html: args.html,
+      text: args.text,
+    }),
+    signal: AbortSignal.timeout(RESEND_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`Resend email failed (${res.status}): ${detail.slice(0, 200)}`);
   }
-  return transporter;
 }
 
 /**
@@ -34,9 +61,9 @@ export function frontendBaseUrl(): string {
   return env.CORS_ORIGIN.split(',')[0]?.trim() || 'http://localhost:3000';
 }
 
-/** The inbox the owner reads (and the sender of app mail): the SMTP account. */
+/** The inbox the owner reads for deletion-review requests. */
 export function ownerInbox(): string {
-  return env.SMTP_FROM ?? env.SMTP_USER ?? '';
+  return env.OWNER_EMAIL ?? env.SMTP_USER ?? '';
 }
 
 function formatDate(d: Date): string {
@@ -52,9 +79,7 @@ export async function sendDeletionConfirmEmail(
   to: string,
   confirmUrl: string
 ): Promise<void> {
-  const from = env.SMTP_FROM ?? env.SMTP_USER ?? 'no-reply@mealmate.app';
-  await getTransporter().sendMail({
-    from: `MealMate <${from}>`,
+  await sendEmail({
     to,
     subject: 'Confirm your MealMate account deletion',
     text:
@@ -98,7 +123,6 @@ export async function sendDeletionReviewEmail(
   details: DeletionReviewDetails,
   approveUrl: string
 ): Promise<void> {
-  const from = env.SMTP_FROM ?? env.SMTP_USER ?? 'no-reply@mealmate.app';
   const recipeLines =
     details.recipeTitles.length > 0
       ? details.recipeTitles.map((t) => `  - ${t}`).join('\n')
@@ -121,8 +145,7 @@ export async function sendDeletionReviewEmail(
     `  Recipes on deletion: ${details.deleteRecipes ? 'Delete them' : 'Leave them as community recipes'}\n\n` +
     `If the claim matches the account, approve it here (the link works for 7 days):\n${approveUrl}\n\n` +
     `Once approved, the requester and the account owner are both emailed, and the account is deleted 30 days later unless the owner signs in. If the claim does not match, ignore this email — nothing happens.`;
-  await getTransporter().sendMail({
-    from: `MealMate <${from}>`,
+  await sendEmail({
     to,
     subject: `Account deletion request to review: ${details.accountEmail}`,
     text,
@@ -157,9 +180,7 @@ export async function sendDeletionApprovedToRequester(
   to: string,
   deleteAt: Date
 ): Promise<void> {
-  const from = env.SMTP_FROM ?? env.SMTP_USER ?? 'no-reply@mealmate.app';
-  await getTransporter().sendMail({
-    from: `MealMate <${from}>`,
+  await sendEmail({
     to,
     subject: 'Your MealMate account deletion was approved',
     text:
@@ -184,9 +205,7 @@ export async function sendDeletionApprovedToAccountOwner(
   deleteAt: Date,
   signInUrl: string
 ): Promise<void> {
-  const from = env.SMTP_FROM ?? env.SMTP_USER ?? 'no-reply@mealmate.app';
-  await getTransporter().sendMail({
-    from: `MealMate <${from}>`,
+  await sendEmail({
     to,
     subject: 'A MealMate account deletion was approved for your account',
     text:
@@ -203,9 +222,7 @@ export async function sendDeletionApprovedToAccountOwner(
 
 /** Send a password-reset email with the reset link. Throws on failure. */
 export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
-  const from = env.SMTP_FROM ?? env.SMTP_USER ?? 'no-reply@mealmate.app';
-  await getTransporter().sendMail({
-    from: `MealMate <${from}>`,
+  await sendEmail({
     to,
     subject: 'Reset your MealMate password',
     text:

@@ -18,9 +18,19 @@ const EnvSchema = z.object({
   // Base URL of the frontend, used to build links sent in emails (e.g. the
   // password-reset link). Falls back to CORS_ORIGIN when unset.
   FRONTEND_URL: z.string().url().optional(),
-  // SMTP settings for outgoing mail (password reset). All optional: when any
-  // of SMTP_HOST / SMTP_USER / SMTP_PASS is missing, mail is disabled and the
-  // forgot-password endpoint answers 503 instead of pretending to send.
+  // Outgoing mail goes through the Resend HTTP API. All optional: when
+  // RESEND_API_KEY is missing, mail is disabled and the forgot-password
+  // endpoint answers 503 instead of pretending to send. RESEND_FROM is a
+  // full "Name <address>" string; without a verified domain Resend only
+  // lets the sandbox sender onboarding@resend.dev deliver to the Resend
+  // account's own address, so a verified domain is needed to reach
+  // arbitrary users. OWNER_EMAIL is where deletion-review requests go.
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM: z.string().default('MealMate <onboarding@resend.dev>'),
+  OWNER_EMAIL: z.string().email().optional(),
+  // Legacy Gmail SMTP settings. The mailer no longer uses SMTP (its port
+  // is blocked from Render); these stay declared only so OWNER_EMAIL can
+  // fall back to the old SMTP_USER. Safe to remove once OWNER_EMAIL is set.
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().int().positive().default(587),
   SMTP_SECURE: z.coerce.boolean().default(false),
