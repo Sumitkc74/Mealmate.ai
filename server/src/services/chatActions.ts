@@ -20,6 +20,7 @@ import { MealPlan, DAYS_OF_WEEK, type DayOfWeek, type IDayPlan } from '../models
 import { Recipe, type IRecipe, type IRecipeIngredient } from '../models/Recipe';
 import { GroceryList } from '../models/GroceryList';
 import { aggregateGroceryItems, collectRecipesFromPlan } from '../utils/groceryAggregator';
+import { findAllergyConflict } from '../utils/allergens';
 import { broadcastMealPlan } from './realtime';
 import { cacheOrPassthrough } from './imageCache';
 import { generateRecipe, type GeneratedRecipe } from './aiClient';
@@ -44,7 +45,7 @@ export interface RawAction {
 
 export interface AppliedAction {
   type: 'add_to_plan';
-  status: 'applied' | 'recipe_not_found' | 'invalid' | 'error';
+  status: 'applied' | 'recipe_not_found' | 'invalid' | 'error' | 'allergy_conflict';
   requested: {
     recipe_query: string;
     day: DayOfWeek | string;
@@ -662,6 +663,24 @@ async function applyAddToPlan(
       requested,
       message: `Couldn't find or generate a recipe for "${recipeQuery}". Try a more specific name or add it on the Recipes page.`,
     };
+  }
+
+  // Library recipes bypass the allergy-aware generation path above, so
+  // screen them explicitly before writing anything to the plan. A
+  // conflicting recipe is refused, never added.
+  if (!wasGenerated) {
+    const conflict = findAllergyConflict(
+      (recipe.ingredients ?? []).map((i) => i.name),
+      ctx.allergies
+    );
+    if (conflict) {
+      return {
+        type: 'add_to_plan',
+        status: 'allergy_conflict',
+        requested,
+        message: `I didn't add "${recipe.title}" to your plan because it contains ${conflict.ingredient}, which conflicts with your saved ${conflict.allergy} allergy.`,
+      };
+    }
   }
 
   try {

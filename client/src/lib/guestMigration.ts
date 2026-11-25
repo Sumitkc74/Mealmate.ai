@@ -20,6 +20,15 @@ import type { RecipeInput } from '@/hooks/useRecipes';
  * (it is a merge, not a replace). Grocery lists have no direct create
  * endpoint, so they are regenerated from their migrated plan — manual
  * check-state on a guest list does not carry over.
+ *
+ * A plan is only posted when every guest recipe in its slots migrated
+ * successfully: a failed recipe upload would otherwise leave that slot
+ * `null` on the server plan while the guest plan is deleted, which no
+ * later retry can repair. A kept plan keeps its recipes too, so the retry
+ * can re-post the whole plan. A migrated plan's server id is recorded
+ * durably in the guest store, so a grocery list whose regeneration failed
+ * can still be linked to its server plan on a later run, after the guest
+ * plan itself is gone.
  */
 
 export interface GuestMigrationResult {
@@ -71,6 +80,43 @@ function slotRecipeId(
   // Guest recipes map to their new server id; server recipes pass through.
   if (isGuestId(recipe.id)) return recipeIdMap.get(recipe.id) ?? null;
   return recipe.id;
+}
+
+/**
+ * Guest recipe ids slotted into this plan that have no migrated server id
+ * (their upload failed, or they are no longer in the guest store). Posting
+ * the plan anyway would write `null` into those slots permanently.
+ */
+function unmigratedGuestRecipeIds(
+  plan: MealPlan,
+  recipeIdMap: Map<string, string>
+): string[] {
+  const missing: string[] = [];
+  for (const d of plan.days) {
+    for (const slot of [d.breakfast, d.lunch, d.dinner]) {
+      if (slot && typeof slot === 'object') {
+        const recipe = slot as Recipe;
+        if (isGuestId(recipe.id) && !recipeIdMap.has(recipe.id)) {
+          missing.push(recipe.id);
+        }
+      }
+    }
+  }
+  return missing;
+}
+
+/** Guest recipe ids slotted into this plan (migrated or not). */
+function slottedGuestRecipeIds(plan: MealPlan): string[] {
+  const ids: string[] = [];
+  for (const d of plan.days) {
+    for (const slot of [d.breakfast, d.lunch, d.dinner]) {
+      if (slot && typeof slot === 'object') {
+        const recipe = slot as Recipe;
+        if (isGuestId(recipe.id)) ids.push(recipe.id);
+      }
+    }
+  }
+  return ids;
 }
 
 async function migrateOnce(qc?: QueryClient): Promise<GuestMigrationResult> {
@@ -134,8 +180,20 @@ async function migrateOnce(qc?: QueryClient): Promise<GuestMigrationResult> {
   }
 
   // 2. Meal plans, with slots remapped through the migrated recipe ids.
+  // A plan whose guest recipe failed to upload is NOT posted: its slot
+  // would be `null` on the server plan while the guest plan is deleted,
+  // which no later retry could repair. The plan (and its recipes) stay
+  // for a later run instead.
   const planIdMap = new Map<string, string>();
   for (const plan of guest.mealPlans) {
+    const missing = unmigratedGuestRecipeIds(plan, recipeIdMap);
+    if (missing.length > 0) {
+      result.plansFailed += 1;
+      failures.push(
+        `meal plan ${plan.weekStartDate}: ${missing.length} recipe(s) did not migrate, keeping the plan for retry`
+      );
+      continue;
+    }
     try {
       const days = plan.days.map((d) => ({
         day: d.day,
@@ -151,7 +209,13 @@ async function migrateOnce(qc?: QueryClient): Promise<GuestMigrationResult> {
         days,
       });
       const serverId = data.plan.id ?? (data.plan as unknown as { _id?: string })._id;
-      if (serverId) planIdMap.set(plan.id, String(serverId));
+      if (serverId) {
+        planIdMap.set(plan.id, String(serverId));
+        // Durable: a grocery list whose regeneration fails below still
+        // needs this server plan id on a later run, after this guest
+        // plan is deleted.
+        useGuestStore.getState().recordMigratedPlan(plan.id, String(serverId));
+      }
       result.plansMigrated += 1;
       migratedPlanIds.push(plan.id);
     } catch (err) {
@@ -189,9 +253,16 @@ async function migrateOnce(qc?: QueryClient): Promise<GuestMigrationResult> {
   }
 
   // 4. Grocery lists: regenerate from the migrated plan (no direct create
-  // endpoint exists). Lists with no migrated plan are skipped.
+  // endpoint exists). Lists with no migrated plan are skipped. A list whose
+  // plan was migrated on an earlier run resolves through the durable
+  // migrated-plan map in the guest store, not just this run's in-memory
+  // map — otherwise a list left behind by a failed regeneration could
+  // never be linked to its server plan again.
+  const regeneratedPlanGuestIds: string[] = [];
   for (const list of guest.groceryLists) {
-    const newPlanId = list.mealPlan ? planIdMap.get(list.mealPlan) : undefined;
+    const newPlanId = list.mealPlan
+      ? planIdMap.get(list.mealPlan) ?? guest.migratedPlanIds[list.mealPlan]
+      : undefined;
     if (!newPlanId) {
       result.listsFailed += 1;
       failures.push(`grocery list ${list.id}: its meal plan was not migrated`);
@@ -201,6 +272,7 @@ async function migrateOnce(qc?: QueryClient): Promise<GuestMigrationResult> {
       await api.post('/grocery/generate', { mealPlanId: newPlanId, usePantry: true });
       result.listsRegenerated += 1;
       regeneratedListIds.push(list.id);
+      regeneratedPlanGuestIds.push(list.mealPlan);
     } catch (err) {
       result.listsFailed += 1;
       failures.push(`grocery list ${list.id}: ${err instanceof Error ? err.message : 'failed'}`);
@@ -209,11 +281,33 @@ async function migrateOnce(qc?: QueryClient): Promise<GuestMigrationResult> {
 
   // Remove ONLY the items that were actually migrated. Failed items stay
   // in the browser so a later sign-in can retry them — never clearAll().
+  // Recipes slotted into a plan that was kept (not migrated) stay too:
+  // deleting a migrated recipe out from under a kept plan would leave the
+  // plan referencing a guest recipe id that no longer exists, so the retry
+  // could never post it.
+  const keptPlanRecipeIds = new Set<string>();
+  for (const plan of guest.mealPlans) {
+    if (migratedPlanIds.includes(plan.id)) continue;
+    for (const id of slottedGuestRecipeIds(plan)) keptPlanRecipeIds.add(id);
+  }
   const store = useGuestStore.getState();
-  for (const id of migratedRecipeIds) store.deleteRecipe(id);
+  for (const id of migratedRecipeIds) {
+    if (!keptPlanRecipeIds.has(id)) store.deleteRecipe(id);
+  }
   for (const id of migratedPlanIds) store.deleteMealPlan(id);
   if (pantryMerged) store.clearPantry();
   for (const id of regeneratedListIds) store.deleteGroceryList(id);
+  // A durable plan-id mapping is only needed while a local grocery list
+  // still references that guest plan; drop it once no such list remains
+  // (so a second list for the same plan is not stranded by the first
+  // list's successful regeneration).
+  for (const guestPlanId of new Set(regeneratedPlanGuestIds)) {
+    if (
+      !useGuestStore.getState().groceryLists.some((l) => l.mealPlan === guestPlanId)
+    ) {
+      useGuestStore.getState().forgetMigratedPlan(guestPlanId);
+    }
+  }
   if (failures.length > 0) {
     console.warn('[guest migration] some items could not be migrated:', failures);
   }

@@ -111,6 +111,14 @@ interface GuestState {
   mealPlans: MealPlan[];
   groceryLists: GroceryList[];
   recipes: Recipe[];
+  /**
+   * Guest plan id -> server plan id for plans already migrated. Durable
+   * (persisted): a grocery list whose regeneration failed stays local after
+   * its plan was migrated and deleted, and the next run needs the server
+   * plan id to regenerate it — the in-memory planIdMap of that run is gone
+   * by then. Entries are dropped once no local list references the plan.
+   */
+  migratedPlanIds: Record<string, string>;
 
   // Pantry
   addPantryItem: (item: PantryItem) => void;
@@ -125,6 +133,8 @@ interface GuestState {
   createMealPlan: (weekStartDate: string) => MealPlan;
   assignSlot: (planId: string, day: DayName, slot: Slot, recipe: Recipe | null) => void;
   deleteMealPlan: (planId: string) => void;
+  recordMigratedPlan: (guestPlanId: string, serverPlanId: string) => void;
+  forgetMigratedPlan: (guestPlanId: string) => void;
 
   // Grocery lists
   addGroceryList: (list: GroceryList) => void;
@@ -153,6 +163,7 @@ export const useGuestStore = create<GuestState>()(
       mealPlans: [],
       groceryLists: [],
       recipes: [],
+      migratedPlanIds: {},
 
       addPantryItem: (item) => set((s) => ({ pantry: [...s.pantry, item] })),
       removePantryItem: (idx) =>
@@ -208,6 +219,17 @@ export const useGuestStore = create<GuestState>()(
         })),
       deleteMealPlan: (planId) =>
         set((s) => ({ mealPlans: s.mealPlans.filter((p) => p.id !== planId) })),
+      recordMigratedPlan: (guestPlanId, serverPlanId) =>
+        set((s) => ({
+          migratedPlanIds: { ...s.migratedPlanIds, [guestPlanId]: serverPlanId },
+        })),
+      forgetMigratedPlan: (guestPlanId) =>
+        set((s) => {
+          if (!(guestPlanId in s.migratedPlanIds)) return s;
+          const next = { ...s.migratedPlanIds };
+          delete next[guestPlanId];
+          return { migratedPlanIds: next };
+        }),
 
       addGroceryList: (list) => set((s) => ({ groceryLists: [...s.groceryLists, list] })),
       updateGroceryItem: (listId, itemId, patch) =>
@@ -288,6 +310,7 @@ export const useGuestStore = create<GuestState>()(
           mealPlans: [],
           groceryLists: [],
           recipes: [],
+          migratedPlanIds: {},
         }),
     }),
     {
@@ -299,6 +322,7 @@ export const useGuestStore = create<GuestState>()(
         mealPlans: state.mealPlans,
         groceryLists: state.groceryLists,
         recipes: state.recipes,
+        migratedPlanIds: state.migratedPlanIds,
       }),
     }
   )

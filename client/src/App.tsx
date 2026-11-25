@@ -4,6 +4,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { ProtectedRoute, PublicOnlyRoute } from '@/components/routing/ProtectedRoute';
 import { useMe } from '@/hooks/useAuth';
 import { useGuestMigrationOnSignIn } from '@/hooks/useGuestMigration';
+import { useNetworkStatus } from '@/lib/offlineSync';
 
 // Route-level code splitting for performance and bundle size optimization
 const HomePage = lazy(() => import('@/pages/HomePage').then((m) => ({ default: m.HomePage })));
@@ -54,6 +55,11 @@ export default function App() {
   useMe();
   // If a guest built local data and then signed in, move it to the account.
   useGuestMigrationOnSignIn();
+  // Flush any grocery edits queued while offline: useNetworkStatus syncs
+  // the queue on mount (if online) and again on every reconnect. App stays
+  // mounted for the whole session, so this is the one place the listener
+  // can live without unmounting before it runs.
+  useNetworkStatus();
   return (
     <Suspense fallback={<RouteFallback />}>
       <Routes>

@@ -22,6 +22,7 @@ from pydantic import ValidationError
 
 from . import gemini
 from .cache import get_cache
+from .knowledge_graph import get_knowledge_graph
 from .schemas import (
     GenerateRecipeRequest,
     GenerateRecipeResponse,
@@ -384,11 +385,19 @@ def _pollinations_image_url(query: str, *, cuisine: str | None = None, ingredien
 
 
 def _violates_allergy(recipe: GeneratedRecipe, allergies: list[str]) -> str | None:
-    """Return the first allergen substring found in any ingredient name, else None."""
+    """Return the first allergen substring found in any ingredient name, else None.
+
+    Group terms (e.g. "dairy") are expanded to their concrete members
+    (milk, butter, cheese, ...) before matching, so a saved group allergy
+    blocks a generated recipe containing a member ingredient.
+    expand_allergens() also keeps the original term, so a saved "milk"
+    still catches milk.
+    """
     if not allergies:
         return None
+    expanded = get_knowledge_graph().expand_allergens(allergies)
     haystack = " ".join(i.name.lower() for i in recipe.ingredients)
-    for a in allergies:
+    for a in expanded:
         token = a.strip().lower()
         if token and token in haystack:
             return a

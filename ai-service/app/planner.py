@@ -47,6 +47,7 @@ from typing import Any, Mapping
 
 from . import gemini
 from ._text import Recipe, normalize, normalize_list
+from .knowledge_graph import get_knowledge_graph
 from .recommender import RecommenderService
 from .schemas import (
     MealPlanDay,
@@ -102,7 +103,14 @@ def _has_tag(recipe: Recipe, slot: str) -> bool:
 def _violates_allergy(recipe: Recipe, allergies: list[str]) -> bool:
     if not allergies:
         return False
-    norm = [a.lower().strip() for a in allergies if a.strip()]
+    # Expand group terms (e.g. "dairy") to their concrete members
+    # (milk, butter, cheese, yogurt, cream, ...) before matching, so a
+    # saved group allergy blocks recipes containing a member ingredient.
+    # expand_allergens() also keeps the original term, so a saved "milk"
+    # still catches milk. Used by both the heuristic pool filter and the
+    # LLM-path validation below.
+    expanded = get_knowledge_graph().expand_allergens(allergies)
+    norm = [a for a in (a.lower().strip() for a in expanded) if a]
     for ing in recipe.ingredients:
         ing_l = ing.lower()
         if any(a in ing_l for a in norm):

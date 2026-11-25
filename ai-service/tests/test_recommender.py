@@ -107,3 +107,44 @@ def test_custom_recipes_can_be_fitted():
     )
     out = s.recommend(ingredients=["apple", "yogurt"], dietary_preferences=[], top_k=2)
     assert out[0].recipe_id == "b"
+
+
+def test_dairy_allergy_excludes_fluffy_pancakes():
+    s = _make_service()
+    query = ["flour", "milk", "egg", "butter", "sugar", "maple syrup"]
+    results = s.recommend(
+        ingredients=query,
+        dietary_preferences=[],
+        allergies=["dairy"],
+        top_k=20,
+    )
+    assert "pancakes" not in {r.recipe_id for r in results}
+    # Without the allergy the same query does return Fluffy Pancakes,
+    # so the exclusion is the allergy filter, not the ranking.
+    unfiltered = s.recommend(
+        ingredients=query, dietary_preferences=[], top_k=20
+    )
+    assert "pancakes" in {r.recipe_id for r in unfiltered}
+
+
+def test_milk_allergy_still_catches_milk():
+    s = _make_service()
+    results = s.recommend(
+        ingredients=["flour", "milk", "egg", "butter", "sugar", "maple syrup"],
+        dietary_preferences=[],
+        allergies=["milk"],
+        top_k=20,
+    )
+    assert "pancakes" not in {r.recipe_id for r in results}
+
+
+def test_dairy_allergy_still_returns_non_dairy_recipes():
+    s = _make_service()
+    results = s.recommend(
+        ingredients=["tomato", "garlic", "zucchini", "eggplant"],
+        dietary_preferences=[],
+        allergies=["dairy"],
+        top_k=20,
+    )
+    assert results
+    assert "ratatouille" in {r.recipe_id for r in results}

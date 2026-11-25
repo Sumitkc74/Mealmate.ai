@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from app.knowledge_graph import get_knowledge_graph
 from app.main import app
-from app.planner import generate_heuristic, generate_plan
+from app.planner import _violates_allergy, generate_heuristic, generate_plan
 from app.recommender import RecommenderService
 
 
@@ -71,6 +72,41 @@ def test_generate_plan_falls_back_when_llm_unavailable(monkeypatch):
     plan = generate_plan(s, pantry=["rice"], prefs=[], allergies=[], use_llm=True)
     assert plan.strategy == "heuristic"
     assert len(plan.days) == 7
+
+
+def test_dairy_allergy_blocks_fluffy_pancakes():
+    s = _service()
+    pancakes = s.get_recipe("pancakes")
+    assert pancakes is not None
+    assert pancakes.title == "Fluffy Pancakes"
+    assert "milk" in pancakes.ingredients and "butter" in pancakes.ingredients
+    # Group allergy expands to its members: dairy must catch milk/butter.
+    assert _violates_allergy(pancakes, ["dairy"]) is True
+    # A saved member allergy still catches the member ingredient.
+    assert _violates_allergy(pancakes, ["milk"]) is True
+    # A recipe with no dairy ingredient still passes a dairy allergy.
+    ratatouille = s.get_recipe("ratatouille")
+    assert ratatouille is not None
+    assert _violates_allergy(ratatouille, ["dairy"]) is False
+    assert _violates_allergy(ratatouille, ["milk"]) is False
+
+
+def test_heuristic_plan_excludes_dairy_for_dairy_allergy():
+    s = _service()
+    dairy = get_knowledge_graph().expand_allergens(["dairy"])
+    plan = generate_heuristic(
+        s, pantry=["tomato", "garlic"], prefs=[], allergies=["dairy"]
+    )
+    assert len(plan.days) == 7  # non-dairy recipes still fill the week
+    for d in plan.days:
+        for m in d.meals:
+            assert m.recipe_id != "pancakes"
+            recipe = next(r for r in s.recipes if r.recipe_id == m.recipe_id)
+            assert not any(
+                member in ing.lower()
+                for ing in recipe.ingredients
+                for member in dairy
+            ), m.recipe_id
 
 
 def test_plan_endpoint_returns_full_week():

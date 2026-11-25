@@ -144,6 +144,112 @@ describe('migrateGuestData', () => {
     void plan;
   });
 
+  it('does not post a plan with a null slot when its recipe upload fails, and keeps the plan and its recipes for retry', async () => {
+    const s = useGuestStore.getState();
+    const failing = s.addRecipe(soupInput);
+    const ok = s.addRecipe({ ...soupInput, title: 'Second Soup' });
+    const keptPlan = s.createMealPlan('2026-11-23');
+    s.assignSlot(keptPlan.id, 'Monday', 'lunch', failing);
+    s.assignSlot(keptPlan.id, 'Monday', 'dinner', ok);
+    // A second plan that only references the recipe that migrated.
+    const goodPlan = s.createMealPlan('2026-11-30');
+    s.assignSlot(goodPlan.id, 'Monday', 'dinner', ok);
+    mockedPost.mockImplementation(async (url: string, body: unknown) => {
+      if (url === '/recipes') {
+        if ((body as { title: string }).title === 'Guest Soup') {
+          throw new Error('gatekeeper rejected');
+        }
+        return { data: { recipe: { id: 'server-recipe-2' } } };
+      }
+      if (url === '/mealplans') {
+        return { data: { plan: { id: 'server-plan-9' } } };
+      }
+      throw new Error(`unexpected POST ${url}`);
+    });
+
+    const result = await migrateGuestData();
+
+    // Only the plan whose recipes all migrated is posted — never a plan
+    // with a null slot for the failed upload.
+    const planCalls = mockedPost.mock.calls.filter((c) => c[0] === '/mealplans');
+    expect(planCalls).toHaveLength(1);
+    const posted = planCalls[0]?.[1] as {
+      weekStartDate: string;
+      days: Array<{ day: string; lunch: unknown; dinner: unknown }>;
+    };
+    expect(posted.weekStartDate).toBe('2026-11-30');
+    expect(posted.days.find((d) => d.day === 'Monday')?.dinner).toBe('server-recipe-2');
+    expect(result).toEqual(
+      expect.objectContaining({
+        recipesMigrated: 1,
+        recipesFailed: 1,
+        plansMigrated: 1,
+        plansFailed: 1,
+      })
+    );
+    // The kept plan stays, and so do BOTH of its recipes — including the
+    // one that migrated, because deleting it would leave the kept plan
+    // referencing a guest recipe id that no longer exists.
+    expect(useGuestStore.getState().mealPlans.map((p) => p.id)).toEqual([keptPlan.id]);
+    expect(useGuestStore.getState().recipes.map((r) => r.title).sort()).toEqual([
+      'Guest Soup',
+      'Second Soup',
+    ]);
+    void goodPlan;
+  });
+
+  it('recovers a leftover grocery list on the next run via the durably stored server plan id', async () => {
+    const { plan } = seedGuestData();
+    mockedPost.mockImplementation(async (url: string) => {
+      if (url === '/recipes') {
+        return { data: { recipe: { id: 'server-recipe-1' } } };
+      }
+      if (url === '/mealplans') {
+        return { data: { plan: { id: 'server-plan-1' } } };
+      }
+      if (url === '/grocery/generate') {
+        throw new Error('grocery service down');
+      }
+      throw new Error(`unexpected POST ${url}`);
+    });
+    mockedPatch.mockResolvedValue({
+      data: { user: { ...testUser, pantry: [...testUser.pantry, { ingredient: 'Onion' }] } },
+    });
+
+    const first = await migrateGuestData();
+    expect(first.listsFailed).toBe(1);
+    expect(first.listsRegenerated).toBe(0);
+    expect(first.plansMigrated).toBe(1);
+    // The plan is gone but its list stays — and the server plan id is
+    // persisted, not just held in memory.
+    expect(useGuestStore.getState().mealPlans).toEqual([]);
+    expect(useGuestStore.getState().groceryLists).toHaveLength(1);
+    expect(useGuestStore.getState().migratedPlanIds[plan.id]).toBe('server-plan-1');
+    const stored = JSON.parse(localStorage.getItem('mealmate.guest') ?? '{}') as {
+      state?: { migratedPlanIds?: Record<string, string> };
+    };
+    expect(stored.state?.migratedPlanIds?.[plan.id]).toBe('server-plan-1');
+
+    // Next run: the plan is long gone, but the leftover list still links
+    // to its server plan through the durable map.
+    mockedPost.mockImplementation(async (url: string) => {
+      if (url === '/grocery/generate') {
+        return { data: { list: { id: 'server-list-1' } } };
+      }
+      throw new Error(`unexpected POST ${url}`);
+    });
+    const second = await migrateGuestData();
+    expect(mockedPost).toHaveBeenCalledWith('/grocery/generate', {
+      mealPlanId: 'server-plan-1',
+      usePantry: true,
+    });
+    expect(second.listsRegenerated).toBe(1);
+    expect(second.listsFailed).toBe(0);
+    expect(useGuestStore.getState().groceryLists).toEqual([]);
+    // No list needs the mapping any more, so it is dropped.
+    expect(useGuestStore.getState().migratedPlanIds[plan.id]).toBeUndefined();
+  });
+
   it('does nothing when there is no guest data', async () => {
     const result = await migrateGuestData();
     expect(mockedPost).not.toHaveBeenCalled();

@@ -33,6 +33,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from ._text import Recipe, doc_text, normalize, normalize_list, query_text
 from .collab import CollabFilter
 from .embeddings import LsaEmbedder
+from .knowledge_graph import get_knowledge_graph
 from .metrics import record_recommender_call
 from .schemas import RecommendedRecipe, SignalContribution, Strategy
 
@@ -234,7 +235,13 @@ class RecommenderService:
 
         norm_pantry = set(_normalize_list(ingredients))
         norm_prefs = set(_normalize_list(dietary_preferences))
-        norm_allergies = set(_normalize_list(allergies or []))
+        # Expand group terms (e.g. "dairy") to their concrete members
+        # (milk, butter, cheese, ...) so a saved group allergy filters
+        # recipes containing a member ingredient; the original term is
+        # kept too, so a saved "milk" still catches milk.
+        norm_allergies = set(
+            _normalize_list(get_knowledge_graph().expand_allergens(allergies or []))
+        )
 
         scored: list[tuple[float, Recipe, list[str], list[str], int]] = []
         for idx, base_score in enumerate(base):
