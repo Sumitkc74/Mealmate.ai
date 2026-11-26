@@ -166,12 +166,25 @@ _CORE_INGREDIENTS: dict[str, dict[str, Any]] = {
 }
 
 _ALLERGEN_HIERARCHY: dict[str, set[str]] = {
+    # 11 groups, mirrored verbatim in server/src/utils/allergens.ts and
+    # client/src/lib/allergens.ts (keep keys and members identical in all
+    # three). The built-in UI presets (client/src/components/pantry/
+    # allergenPresets.ts) are saved verbatim, so every preset id must be a
+    # key here or expand to itself only: "tree-nuts", "alliums", "peanuts"
+    # and "wheat" are keys for that reason ("wheat" mirrors the gluten
+    # members — the preset label is "Wheat / Gluten"). "sesame",
+    # "mustard", "celery" and "sulfites" are not groups; they match
+    # themselves (with plural handling in the matchers).
     "dairy": {
         "milk", "butter", "cheese", "yogurt", "cream", "sour cream",
         "heavy cream", "buttermilk", "ghee", "casein", "whey", "ricotta",
         "parmesan", "mozzarella", "cheddar", "brie", "feta"
     },
     "gluten": {
+        "wheat", "flour", "all-purpose flour", "bread", "pasta", "barley",
+        "rye", "couscous", "bulgur", "soy sauce", "seitan", "semolina"
+    },
+    "wheat": {
         "wheat", "flour", "all-purpose flour", "bread", "pasta", "barley",
         "rye", "couscous", "bulgur", "soy sauce", "seitan", "semolina"
     },
@@ -183,6 +196,13 @@ _ALLERGEN_HIERARCHY: dict[str, set[str]] = {
         "almond", "walnut", "cashew", "pecan", "pistachio", "macadamia",
         "peanut", "peanut butter", "hazelnut"
     },
+    "tree-nuts": {
+        "almond", "walnut", "cashew", "pecan", "pistachio", "hazelnut",
+        "macadamia", "brazil nut", "pine nut", "chestnut"
+    },
+    "peanuts": {
+        "peanut", "peanut butter", "peanut oil"
+    },
     "eggs": {
         "egg", "egg yolk", "egg white", "mayonnaise", "meringue"
     },
@@ -191,6 +211,9 @@ _ALLERGEN_HIERARCHY: dict[str, set[str]] = {
     },
     "shellfish": {
         "shrimp", "prawn", "crab", "lobster", "clam", "mussel", "oyster", "scallop"
+    },
+    "alliums": {
+        "garlic", "onion", "shallot", "leek", "chive", "scallion", "spring onion"
     },
 }
 

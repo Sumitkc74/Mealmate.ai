@@ -16,6 +16,12 @@
 /**
  * Allergen group → concrete ingredient terms, copied verbatim from the
  * ai-service `_ALLERGEN_HIERARCHY`. Keys and entries are lowercase.
+ * 11 groups: the 7 original groups plus "wheat" (mirrors the gluten
+ * members — the UI preset label is "Wheat / Gluten"), "tree-nuts",
+ * "peanuts" and "alliums", which are keys because the built-in UI
+ * presets (client/src/components/pantry/allergenPresets.ts) are saved
+ * verbatim and must expand. "sesame", "mustard", "celery" and
+ * "sulfites" are not groups; they match themselves.
  */
 export const ALLERGEN_HIERARCHY: Record<string, readonly string[]> = {
   dairy: [
@@ -27,6 +33,10 @@ export const ALLERGEN_HIERARCHY: Record<string, readonly string[]> = {
     'wheat', 'flour', 'all-purpose flour', 'bread', 'pasta', 'barley',
     'rye', 'couscous', 'bulgur', 'soy sauce', 'seitan', 'semolina',
   ],
+  wheat: [
+    'wheat', 'flour', 'all-purpose flour', 'bread', 'pasta', 'barley',
+    'rye', 'couscous', 'bulgur', 'soy sauce', 'seitan', 'semolina',
+  ],
   soy: [
     'soy sauce', 'tofu', 'tempeh', 'edamame', 'miso', 'soy milk',
     'tamari', 'soy lecithin',
@@ -35,12 +45,20 @@ export const ALLERGEN_HIERARCHY: Record<string, readonly string[]> = {
     'almond', 'walnut', 'cashew', 'pecan', 'pistachio', 'macadamia',
     'peanut', 'peanut butter', 'hazelnut',
   ],
+  'tree-nuts': [
+    'almond', 'walnut', 'cashew', 'pecan', 'pistachio', 'hazelnut',
+    'macadamia', 'brazil nut', 'pine nut', 'chestnut',
+  ],
+  peanuts: ['peanut', 'peanut butter', 'peanut oil'],
   eggs: ['egg', 'egg yolk', 'egg white', 'mayonnaise', 'meringue'],
   fish: [
     'salmon', 'tuna', 'cod', 'anchovy', 'fish sauce', 'tilapia', 'trout',
   ],
   shellfish: [
     'shrimp', 'prawn', 'crab', 'lobster', 'clam', 'mussel', 'oyster', 'scallop',
+  ],
+  alliums: [
+    'garlic', 'onion', 'shallot', 'leek', 'chive', 'scallion', 'spring onion',
   ],
 };
 
@@ -69,8 +87,9 @@ export function expandAllergies(allergies: string[]): Set<string> {
  * real milk, and a saved 'soy' allergy still catches 'soy milk'
  * because the 'soy' term itself matches. Keep this list and rule
  * identical in server/src/utils/allergens.ts, client/src/lib/allergens.ts,
- * ai-service/app/planner.py, ai-service/app/recommender.py and
- * ai-service/app/recipe_gen.py. Do not change the 7-group hierarchy.
+ * ai-service/app/planner.py, ai-service/app/recommender.py,
+ * ai-service/app/recipe_gen.py and ai-service/app/rag.py.
+ * Do not change the 11-group hierarchy.
  */
 export const PLANT_MILK_QUALIFIERS: readonly string[] = [
   'almond', 'cashew', 'coconut', 'flax', 'hazelnut', 'hemp',

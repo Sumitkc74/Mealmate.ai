@@ -4,7 +4,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useLogout } from '@/hooks/useAuth';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
-import type { User } from '@/types';
+import {
+  cacheGroceryList,
+  getOfflineGroceryQueue,
+  queueOfflineGroceryUpdate,
+} from '@/lib/offlineSync';
+import type { GroceryList, User } from '@/types';
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
@@ -39,8 +44,18 @@ function Probe() {
 describe('useLogout', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     useAuthStore.setState({ user: testUser, authedAt: null });
   });
+
+  function cacheKeys(): string[] {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('mealmate_grocery_cache_')) keys.push(key);
+    }
+    return keys;
+  }
 
   it('awaits the server logout POST before clearing local state', async () => {
     // The POST resolves only when we release it, so we can observe the
@@ -80,5 +95,33 @@ describe('useLogout', () => {
     );
     fireEvent.click(screen.getByText('sign out'));
     await waitFor(() => expect(useAuthStore.getState().user).toBeNull());
+  });
+
+  it('clears all cached grocery lists on sign-out but keeps the offline queue', async () => {
+    const list: GroceryList = {
+      id: 'g1',
+      user: 'u1',
+      mealPlan: 'p1',
+      items: [{ _id: 'i1', ingredient: 'tomato', category: 'produce', checked: false }],
+    };
+    cacheGroceryList(list);
+    // Legacy unscoped key from before per-account scoping.
+    localStorage.setItem('mealmate_grocery_cache_g1', JSON.stringify(list));
+    queueOfflineGroceryUpdate('list-1', 'item-1', { checked: true });
+    expect(cacheKeys()).not.toHaveLength(0);
+
+    mockedPost.mockResolvedValueOnce({ data: { success: true } });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <Probe />
+      </QueryClientProvider>
+    );
+    fireEvent.click(screen.getByText('sign out'));
+
+    await waitFor(() => expect(useAuthStore.getState().user).toBeNull());
+    expect(cacheKeys()).toHaveLength(0);
+    // Unsynced edits must survive sign-out.
+    expect(getOfflineGroceryQueue()).toHaveLength(1);
   });
 });

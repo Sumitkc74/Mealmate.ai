@@ -244,6 +244,106 @@ def test_rag_index_and_reindex():
         assert qbody["recipes"][0]["id"] == "beef-tacos"
 
 
+def test_rag_suggest_dairy_allergy_excludes_milk_butter_recipe(monkeypatch):
+    """Fix 1: a saved 'dairy' allergy must exclude a milk+butter recipe
+    from both the returned recipes AND the suggestion text. Gemini is
+    forced off so _generate falls back to structured text built from
+    the filtered safe_recipes — the violating recipe must not leak
+    into that text either."""
+    monkeypatch.setattr("app.gemini.is_available", lambda: False)
+
+    recipes = [
+        {
+            "id": "creamy-butter-pasta",
+            "title": "Creamy Butter Pasta",
+            "cuisine": "italian",
+            "ingredients": ["pasta", "milk", "butter", "parmesan"],
+            "tags": ["italian", "dinner"],
+            "instructions": ["Boil pasta.", "Stir in milk, butter and parmesan."],
+        },
+        {
+            "id": "vegan-lentil-soup",
+            "title": "Hearty Lentil Soup",
+            "cuisine": "mediterranean",
+            "ingredients": ["lentils", "carrot", "celery", "onion", "cumin", "vegetable broth"],
+            "tags": ["mediterranean", "vegan", "soup", "dinner"],
+            "instructions": ["Simmer lentils and veggies in broth with cumin."],
+        },
+    ]
+    payload = {
+        "pantry": ["pasta", "milk", "butter"],
+        "dietary_preferences": [],
+        "top_k": 5,
+    }
+    with TestClient(app) as c:
+        init_rag(recipes)
+        # Control: without the allergy the violating recipe is retrievable.
+        r = c.post("/rag/suggest", json={**payload, "allergies": []})
+        assert r.status_code == 200
+        assert any(rec["id"] == "creamy-butter-pasta" for rec in r.json()["recipes"])
+
+        r = c.post("/rag/suggest", json={**payload, "allergies": ["dairy"]})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["success"] is True
+        assert all(rec["id"] != "creamy-butter-pasta" for rec in body["recipes"])
+        assert "Creamy Butter Pasta" not in body["suggestion"]
+        assert "milk" not in body["suggestion"].lower()
+        assert "butter" not in body["suggestion"].lower()
+        assert "parmesan" not in body["suggestion"].lower()
+        # A safe recipe is still suggested.
+        assert any(rec["id"] == "vegan-lentil-soup" for rec in body["recipes"])
+
+
+def test_rag_suggest_dairy_allergy_keeps_coconut_milk_recipe(monkeypatch):
+    """Fix 1 plant-milk rule: a coconut-milk recipe is NOT excluded by
+    a saved dairy allergy in suggest()."""
+    monkeypatch.setattr("app.gemini.is_available", lambda: False)
+
+    recipes = [
+        {
+            "id": "thai-green-curry",
+            "title": "Thai Green Curry",
+            "cuisine": "thai",
+            "ingredients": ["chicken breast", "green curry paste", "coconut milk", "rice"],
+            "tags": ["thai", "dinner"],
+            "instructions": ["Simmer chicken in coconut milk with curry paste.", "Serve with rice."],
+        },
+        {
+            "id": "creamy-butter-pasta",
+            "title": "Creamy Butter Pasta",
+            "cuisine": "italian",
+            "ingredients": ["pasta", "milk", "butter", "parmesan"],
+            "tags": ["italian", "dinner"],
+            "instructions": ["Boil pasta.", "Stir in milk, butter and parmesan."],
+        },
+        {
+            "id": "vegan-lentil-soup",
+            "title": "Hearty Lentil Soup",
+            "cuisine": "mediterranean",
+            "ingredients": ["lentils", "carrot", "celery", "onion", "cumin", "vegetable broth"],
+            "tags": ["mediterranean", "vegan", "soup", "dinner"],
+            "instructions": ["Simmer lentils and veggies in broth with cumin."],
+        },
+    ]
+    with TestClient(app) as c:
+        init_rag(recipes)
+        r = c.post(
+            "/rag/suggest",
+            json={
+                "pantry": ["rice", "chicken", "coconut milk", "lentils"],
+                "dietary_preferences": [],
+                "allergies": ["dairy"],
+                "top_k": 5,
+            },
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["success"] is True
+        assert any(rec["id"] == "thai-green-curry" for rec in body["recipes"])
+        assert all(rec["id"] != "creamy-butter-pasta" for rec in body["recipes"])
+
+
 def test_rag_fallback_when_gemini_unavailable(monkeypatch):
     """When Gemini is unavailable, deterministic fallback provides the suggestion."""
     monkeypatch.setattr("app.gemini.is_available", lambda: False)

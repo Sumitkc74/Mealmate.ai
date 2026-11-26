@@ -34,6 +34,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from .embeddings import LsaEmbedder
+from .knowledge_graph import get_knowledge_graph
 
 logger = logging.getLogger(__name__)
 
@@ -106,8 +107,57 @@ def _recipe_to_text(recipe: dict[str, Any]) -> str:
     return ". ".join(p for p in parts if p)
 
 
+# Plant-based milks are NOT dairy milk: a saved "dairy" (or "milk")
+# allergy must not block a recipe whose only "milk" is a plant milk
+# ("coconut milk", "almond milk", ...). The "milk" term still matches
+# real milk, and a saved "soy" allergy still catches "soy milk"
+# because the "soy" term itself matches. Keep this list and rule
+# identical in planner.py, recommender.py, recipe_gen.py, rag.py,
+# server/src/utils/allergens.ts and client/src/lib/allergens.ts.
+# Do not change the 11-group allergen hierarchy.
+PLANT_MILK_QUALIFIERS: tuple[str, ...] = (
+    "almond", "cashew", "coconut", "flax", "hazelnut", "hemp",
+    "macadamia", "oat", "pea", "pecan", "pistachio", "rice",
+    "soy", "sunflower", "walnut",
+)
+_PLANT_MILK_RE = re.compile(
+    r"\b(?:" + "|".join(PLANT_MILK_QUALIFIERS) + r")[-\s]+milks?\b"
+)
+
+
+def _strip_plant_milks(text: str) -> str:
+    """Remove plant-milk phrases from ``text`` so a bare "milk" match only
+    sees real (dairy) milk. A recipe with both plant milk and real milk
+    still matches, because only the plant-milk phrase is removed."""
+    return _PLANT_MILK_RE.sub(" ", text)
+
+
+def _term_matches_ingredient(term: str, ingredient: str) -> bool:
+    """Substring match of an allergen term against one (lowercased)
+    ingredient, except a bare "milk" term never matches a plant milk.
+    A saved plural term ("sulfites") also matches its singular form
+    ("sulfite"), mirroring the client/server whole-word stemmer — but
+    only at a word boundary, so "nuts" -> "nut" does not match inside
+    "coconut"."""
+    if term == "milk":
+        return "milk" in _strip_plant_milks(ingredient)
+    if term in ingredient:
+        return True
+    if term.endswith("s") and len(term) > 3:
+        singular = term[:-1]
+        return re.search(r"\b" + re.escape(singular) + r"\b", ingredient) is not None
+    return False
+
+
 def _contains_allergen(recipe: dict[str, Any], allergies: list[str]) -> bool:
-    """Return True if any allergen keyword appears in the recipe title or ingredients."""
+    """Return True if any allergen term appears in the recipe title or ingredients.
+
+    ``allergies`` must already be expanded group terms (e.g. "dairy" ->
+    milk, butter, cheese, ...) — callers expand via
+    ``get_knowledge_graph().expand_allergens()`` first, mirroring
+    ``planner._violates_allergy``. Matching uses
+    ``_term_matches_ingredient``, so a bare "milk" term never matches a
+    plant milk ("coconut milk")."""
     clean_allergies = [a.lower().strip() for a in allergies if a and a.strip()]
     if not clean_allergies:
         return False
@@ -119,7 +169,7 @@ def _contains_allergen(recipe: dict[str, Any], allergies: list[str]) -> bool:
 
     for allergen in clean_allergies:
         for text in check_texts:
-            if allergen in text:
+            if _term_matches_ingredient(allergen, text):
                 return True
     return False
 
@@ -371,8 +421,18 @@ class RAGService:
         n_fetch = max(top_k * 3, 10)
         retrieved = self._retrieve(query_text, n_results=n_fetch)
 
-        # 3. Hard-filter allergens
-        safe_recipes = [r for r in retrieved if not _contains_allergen(r, clean_allergies)]
+        # 3. Hard-filter allergens. Expand group terms (e.g. "dairy") to
+        # their concrete members (milk, butter, cheese, ...) first, so a
+        # saved group allergy blocks recipes containing a member
+        # ingredient — mirroring planner._violates_allergy, including
+        # the plant-milk rule in _term_matches_ingredient. Only the
+        # filtered safe_recipes are returned AND fed to _generate().
+        expanded_allergies = (
+            sorted(get_knowledge_graph().expand_allergens(clean_allergies))
+            if clean_allergies
+            else []
+        )
+        safe_recipes = [r for r in retrieved if not _contains_allergen(r, expanded_allergies)]
 
         # Filter dietary preferences
         pref_lower = [p.lower() for p in clean_prefs]

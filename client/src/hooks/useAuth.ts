@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
+import { clearGroceryCache } from '@/lib/offlineSync';
 import type { AuthResponse, User } from '@/types';
 
 interface LoginInput {
@@ -169,5 +170,9 @@ export function useLogout() {
     }
     logout();
     queryClient.clear();
+    // Drop every cached grocery list so a cached copy from this account can
+    // never be served to the next account (or a guest) on this browser.
+    // The offline queue is NOT cleared: unsynced edits must survive sign-out.
+    clearGroceryCache();
   };
 }

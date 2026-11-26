@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { expandAllergies, findAllergyConflict } from '@/lib/allergens';
+import { ALLERGEN_PRESETS } from '@/components/pantry/allergenPresets';
 
 describe('expandAllergies', () => {
   it('expands a group allergy to its members', () => {
@@ -86,4 +87,43 @@ describe('findAllergyConflict', () => {
     });
     expect(findAllergyConflict(['soy milk', 'sugar'], ['dairy'])).toBeNull();
   });
+});
+
+describe('built-in allergen presets', () => {
+  // Representative ingredient per preset id, from the review spec.
+  // Preset ids come from ALLERGEN_PRESETS itself so this test stays in
+  // sync if a preset is added later.
+  const REPRESENTATIVE: Record<string, string> = {
+    peanuts: 'peanut butter',
+    'tree-nuts': 'almonds',
+    dairy: 'milk',
+    eggs: 'egg',
+    shellfish: 'shrimp',
+    fish: 'salmon',
+    wheat: 'barley',
+    soy: 'tofu',
+    sesame: 'sesame seeds',
+    alliums: 'garlic',
+    mustard: 'mustard',
+    celery: 'celery',
+    sulfites: 'sodium sulfite',
+  };
+
+  it('has a representative ingredient for every built-in preset', () => {
+    expect(ALLERGEN_PRESETS.length).toBe(13);
+    for (const preset of ALLERGEN_PRESETS) {
+      expect(REPRESENTATIVE[preset.id]).toBeDefined();
+    }
+  });
+
+  for (const [presetId, ingredient] of Object.entries(REPRESENTATIVE)) {
+    it(`preset ${presetId} blocks its representative ingredient ${ingredient}`, () => {
+      expect(ALLERGEN_PRESETS.some((p) => p.id === presetId)).toBe(true);
+      const conflict = findAllergyConflict([ingredient, 'rice'], [presetId]);
+      expect(conflict).not.toBeNull();
+      expect(conflict?.ingredient).toBe(ingredient);
+      expect(conflict?.allergy).toBe(presetId);
+      expect(findAllergyConflict(['rice', 'tomato'], [presetId])).toBeNull();
+    });
+  }
 });

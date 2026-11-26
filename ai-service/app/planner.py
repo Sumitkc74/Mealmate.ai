@@ -106,9 +106,9 @@ def _has_tag(recipe: Recipe, slot: str) -> bool:
 # ("coconut milk", "almond milk", ...). The "milk" term still matches
 # real milk, and a saved "soy" allergy still catches "soy milk"
 # because the "soy" term itself matches. Keep this list and rule
-# identical in planner.py, recommender.py, recipe_gen.py,
+# identical in planner.py, recommender.py, recipe_gen.py, rag.py,
 # server/src/utils/allergens.ts and client/src/lib/allergens.ts.
-# Do not change the 7-group allergen hierarchy.
+# Do not change the 11-group allergen hierarchy.
 PLANT_MILK_QUALIFIERS: tuple[str, ...] = (
     "almond", "cashew", "coconut", "flax", "hazelnut", "hemp",
     "macadamia", "oat", "pea", "pecan", "pistachio", "rice",
@@ -128,10 +128,19 @@ def _strip_plant_milks(text: str) -> str:
 
 def _term_matches_ingredient(term: str, ingredient: str) -> bool:
     """Substring match of an allergen term against one (lowercased)
-    ingredient, except a bare "milk" term never matches a plant milk."""
+    ingredient, except a bare "milk" term never matches a plant milk.
+    A saved plural term ("sulfites") also matches its singular form
+    ("sulfite"), mirroring the client/server whole-word stemmer — but
+    only at a word boundary, so "nuts" -> "nut" does not match inside
+    "coconut"."""
     if term == "milk":
         return "milk" in _strip_plant_milks(ingredient)
-    return term in ingredient
+    if term in ingredient:
+        return True
+    if term.endswith("s") and len(term) > 3:
+        singular = term[:-1]
+        return re.search(r"\b" + re.escape(singular) + r"\b", ingredient) is not None
+    return False
 
 
 def _violates_allergy(recipe: Recipe, allergies: list[str]) -> bool:

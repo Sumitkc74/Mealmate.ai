@@ -86,3 +86,35 @@ describe('findAllergyConflict', () => {
     expect(findAllergyConflict(['soy milk', 'sugar'], ['dairy'])).toBeNull();
   });
 });
+
+describe('built-in allergen presets', () => {
+  // Preset ids from client/src/components/pantry/allergenPresets.ts —
+  // hardcoded here (with this pointer) because the server cannot import
+  // the client module; keep in sync if a preset is added. The
+  // representative ingredients are the ones from the review spec.
+  const PRESET_CASES: Array<[string, string]> = [
+    ['peanuts', 'peanut butter'],
+    ['tree-nuts', 'almonds'],
+    ['dairy', 'milk'],
+    ['eggs', 'egg'],
+    ['shellfish', 'shrimp'],
+    ['fish', 'salmon'],
+    ['wheat', 'barley'],
+    ['soy', 'tofu'],
+    ['sesame', 'sesame seeds'],
+    ['alliums', 'garlic'],
+    ['mustard', 'mustard'],
+    ['celery', 'celery'],
+    ['sulfites', 'sodium sulfite'],
+  ];
+
+  for (const [preset, ingredient] of PRESET_CASES) {
+    it(`preset ${preset} blocks its representative ingredient ${ingredient}`, () => {
+      const conflict = findAllergyConflict([ingredient, 'rice'], [preset]);
+      expect(conflict).not.toBeNull();
+      expect(conflict?.ingredient).toBe(ingredient);
+      expect(conflict?.allergy).toBe(preset);
+      expect(findAllergyConflict(['rice', 'tomato'], [preset])).toBeNull();
+    });
+  }
+});

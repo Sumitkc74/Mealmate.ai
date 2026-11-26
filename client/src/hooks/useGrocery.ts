@@ -29,7 +29,17 @@ export function useGroceryList(id: string | undefined) {
         cacheGroceryList(data.list);
         return data.list;
       } catch (err) {
-        if (id) {
+        // Serve the cache ONLY on a connectivity failure (no response at
+        // all). A response error — 401/403/404 — means the server answered
+        // and this account does not have this list, so a cached copy (e.g.
+        // from a previous account) must never be served instead.
+        const hasResponse =
+          err !== null &&
+          typeof err === 'object' &&
+          'response' in err &&
+          (err as { response?: unknown }).response !== undefined &&
+          (err as { response?: unknown }).response !== null;
+        if (!hasResponse && id) {
           const cached = getCachedGroceryList(id);
           if (cached) return cached;
         }
