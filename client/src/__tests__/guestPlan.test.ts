@@ -3,6 +3,8 @@ import {
   aggregateGuestGrocery,
   computeGuestWeeklyNutrition,
   collectPlanRecipes,
+  filterSafeGuestRecipes,
+  findGuestRecipeAllergyConflict,
 } from '@/lib/guestPlan';
 import { emptyGuestPlan } from '@/stores/guestStore';
 import type { MealPlan, PantryItem, Recipe } from '@/types';
@@ -90,5 +92,76 @@ describe('guestPlan helpers', () => {
     const nutrition = computeGuestWeeklyNutrition(emptyGuestPlan('2026-11-23'));
     expect(nutrition.total.calories).toBe(0);
     expect(nutrition.days).toHaveLength(7);
+  });
+});
+
+describe('guest allergy filtering', () => {
+  const pancakes = makeRecipe({
+    title: 'Fluffy Pancakes',
+    ingredients: [
+      { name: 'flour', quantity: 200, unit: 'g' },
+      { name: 'milk', quantity: 250, unit: 'ml' },
+      { name: 'egg', quantity: 2, unit: 'pcs' },
+      { name: 'butter', quantity: 50, unit: 'g' },
+      { name: 'sugar', quantity: 30, unit: 'g' },
+    ],
+  });
+
+  const stirFry = makeRecipe({
+    title: 'Veggie Stir Fry',
+    ingredients: [
+      { name: 'rice', quantity: 200, unit: 'g' },
+      { name: 'tomato', quantity: 2, unit: 'pcs' },
+      { name: 'garlic', quantity: 3, unit: 'pcs' },
+    ],
+  });
+
+  const coconutCurry = makeRecipe({
+    title: 'Coconut Curry',
+    ingredients: [
+      { name: 'coconut milk', quantity: 400, unit: 'ml' },
+      { name: 'rice', quantity: 200, unit: 'g' },
+      { name: 'curry paste', quantity: 2, unit: 'tbsp' },
+    ],
+  });
+
+  const soyMilkSmoothie = makeRecipe({
+    title: 'Soy Milk Smoothie',
+    ingredients: [
+      { name: 'soy milk', quantity: 250, unit: 'ml' },
+      { name: 'banana', quantity: 1, unit: 'pcs' },
+    ],
+  });
+
+  it('excludes a milk/butter recipe for a guest dairy allergy and keeps a safe recipe', () => {
+    const safe = filterSafeGuestRecipes(
+      [pancakes, stirFry, coconutCurry],
+      ['dairy']
+    );
+    expect(safe.map((r) => r.title)).toEqual(['Veggie Stir Fry', 'Coconut Curry']);
+  });
+
+  it('does NOT exclude a coconut-milk recipe for a guest dairy allergy', () => {
+    const safe = filterSafeGuestRecipes([coconutCurry], ['dairy']);
+    expect(safe).toEqual([coconutCurry]);
+    expect(findGuestRecipeAllergyConflict(coconutCurry, ['dairy'])).toBeNull();
+  });
+
+  it('still catches soy milk for a guest soy allergy', () => {
+    const safe = filterSafeGuestRecipes([soyMilkSmoothie, coconutCurry], ['soy']);
+    expect(safe.map((r) => r.title)).toEqual(['Coconut Curry']);
+  });
+
+  it('names the conflicting ingredient and the saved allergy', () => {
+    const conflict = findGuestRecipeAllergyConflict(pancakes, ['dairy']);
+    expect(conflict).not.toBeNull();
+    expect(conflict?.ingredient).toBe('milk');
+    expect(conflict?.allergy).toBe('dairy');
+    expect(findGuestRecipeAllergyConflict(stirFry, ['dairy'])).toBeNull();
+  });
+
+  it('returns the list unchanged when the guest saved no allergies', () => {
+    const recipes = [pancakes, stirFry];
+    expect(filterSafeGuestRecipes(recipes, [])).toBe(recipes);
   });
 });

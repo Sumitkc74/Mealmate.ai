@@ -59,4 +59,31 @@ describe('findAllergyConflict', () => {
       allergy: 'egg',
     });
   });
+
+  it('does not block a plant milk for a dairy allergy', () => {
+    // Thai Green Curry's only "milk" is coconut milk: not dairy.
+    expect(
+      findAllergyConflict(
+        ['chicken breast', 'green curry paste', 'coconut milk', 'rice'],
+        ['dairy']
+      )
+    ).toBeNull();
+    expect(findAllergyConflict(['coconut milk', 'rice'], ['milk'])).toBeNull();
+    expect(findAllergyConflict(['oat milk', 'banana'], ['dairy'])).toBeNull();
+    expect(findAllergyConflict(['almond milk', 'banana'], ['dairy'])).toBeNull();
+  });
+
+  it('still blocks a recipe with plant milk AND real milk for a dairy allergy', () => {
+    expect(
+      findAllergyConflict(['coconut milk', 'milk', 'rice'], ['dairy'])
+    ).toEqual({ ingredient: 'milk', allergy: 'dairy' });
+  });
+
+  it('still blocks soy milk for a soy allergy, but not for a dairy allergy', () => {
+    expect(findAllergyConflict(['soy milk', 'sugar'], ['soy'])).toEqual({
+      ingredient: 'soy milk',
+      allergy: 'soy',
+    });
+    expect(findAllergyConflict(['soy milk', 'sugar'], ['dairy'])).toBeNull();
+  });
 });

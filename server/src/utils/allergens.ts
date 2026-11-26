@@ -63,6 +63,36 @@ export function expandAllergies(allergies: string[]): Set<string> {
 }
 
 /**
+ * Plant-based milks are NOT dairy milk: a saved 'dairy' (or 'milk')
+ * allergy must not block a recipe whose only 'milk' is a plant milk
+ * ('coconut milk', 'almond milk', ...). The 'milk' term still matches
+ * real milk, and a saved 'soy' allergy still catches 'soy milk'
+ * because the 'soy' term itself matches. Keep this list and rule
+ * identical in server/src/utils/allergens.ts, client/src/lib/allergens.ts,
+ * ai-service/app/planner.py, ai-service/app/recommender.py and
+ * ai-service/app/recipe_gen.py. Do not change the 7-group hierarchy.
+ */
+export const PLANT_MILK_QUALIFIERS: readonly string[] = [
+  'almond', 'cashew', 'coconut', 'flax', 'hazelnut', 'hemp',
+  'macadamia', 'oat', 'pea', 'pecan', 'pistachio', 'rice',
+  'soy', 'sunflower', 'walnut',
+];
+
+/**
+ * Remove plant-milk phrases from a normalised (space-padded) ingredient
+ * string, so a bare 'milk' match only sees real (dairy) milk. A recipe
+ * with both plant milk and real milk still matches, because only the
+ * plant-milk phrase is removed.
+ */
+function stripPlantMilks(normalisedIngredient: string): string {
+  let stripped = normalisedIngredient;
+  for (const qualifier of PLANT_MILK_QUALIFIERS) {
+    stripped = stripped.split(` ${qualifier} milk `).join(' ');
+  }
+  return stripped;
+}
+
+/**
  * Normalise an ingredient / allergen term for matching: lowercase, split
  * on non-alphanumerics, and strip a trailing 's' so plurals ('eggs') match
  * singular terms ('egg'). Returns a space-padded string so whole-word
@@ -80,7 +110,14 @@ function normaliseForMatch(text: string): string {
 
 /** True when the ingredient name contains the allergen term as a whole word or phrase. */
 function ingredientMatches(ingredientName: string, term: string): boolean {
-  return normaliseForMatch(ingredientName).includes(normaliseForMatch(term));
+  const normalisedIngredient = normaliseForMatch(ingredientName);
+  const normalisedTerm = normaliseForMatch(term);
+  // A bare 'milk' term never matches a plant milk; other terms
+  // (e.g. 'soy', 'soy milk') match as before.
+  if (normalisedTerm.trim() === 'milk') {
+    return stripPlantMilks(normalisedIngredient).includes(normalisedTerm);
+  }
+  return normalisedIngredient.includes(normalisedTerm);
 }
 
 export interface AllergyConflict {

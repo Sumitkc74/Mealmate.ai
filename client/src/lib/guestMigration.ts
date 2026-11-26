@@ -28,7 +28,10 @@ import type { RecipeInput } from '@/hooks/useRecipes';
  * can re-post the whole plan. A migrated plan's server id is recorded
  * durably in the guest store, so a grocery list whose regeneration failed
  * can still be linked to its server plan on a later run, after the guest
- * plan itself is gone.
+ * plan itself is gone. Likewise a migrated recipe's server id is recorded
+ * durably: a recipe kept because its plan was kept stays in the store for
+ * a later retry, and the retry reuses its server id instead of uploading
+ * it again and creating a second server copy.
  */
 
 export interface GuestMigrationResult {
@@ -127,7 +130,8 @@ async function migrateOnce(qc?: QueryClient): Promise<GuestMigrationResult> {
     guest.pantry.length === 0 &&
     guest.recipes.length === 0 &&
     guest.mealPlans.length === 0 &&
-    guest.groceryLists.length === 0
+    guest.groceryLists.length === 0 &&
+    guest.allergies.length === 0
   ) {
     return { ...EMPTY_RESULT };
   }
@@ -157,10 +161,49 @@ async function migrateOnce(qc?: QueryClient): Promise<GuestMigrationResult> {
   const migratedPlanIds: string[] = [];
   const regeneratedListIds: string[] = [];
   let pantryMerged = false;
+  let allergiesMigrated = false;
 
-  // 1. Recipes first — plans reference them by id.
+  // 0. Allergies: merge the guest's saved allergies into the account's
+  // (union, deduped case-insensitively) without wiping the account's
+  // existing ones — PATCH replaces the field, so the merge must happen
+  // here. Uses the allergies from the session check above, so no extra
+  // fetch is needed. Cleared from the guest store only if the PATCH
+  // succeeds, so a failure is retried on a later sign-in.
+  if (guest.allergies.length > 0) {
+    try {
+      const current = sessionUser.allergies ?? [];
+      const seen = new Set(current.map((a) => a.toLowerCase().trim()));
+      const merged = [...current];
+      for (const allergy of guest.allergies) {
+        const key = allergy.toLowerCase().trim();
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(allergy);
+        }
+      }
+      const { data } = await api.patch<{ user: User }>('/auth/me', {
+        allergies: merged,
+      });
+      useAuthStore.getState().setUser(data.user);
+      allergiesMigrated = true;
+    } catch (err) {
+      failures.push(`allergies: ${err instanceof Error ? err.message : 'failed'}`);
+    }
+  }
+
+  // 1. Recipes first — plans reference them by id. A recipe that already
+  // migrated on an earlier run (its plan was kept, so the recipe was kept
+  // too) is NOT re-uploaded: its server id is reused from the durable
+  // map in the guest store, so the retry creates no second server copy.
   const recipeIdMap = new Map<string, string>();
   for (const recipe of guest.recipes) {
+    const existingServerId = guest.migratedRecipeIds[recipe.id];
+    if (existingServerId) {
+      recipeIdMap.set(recipe.id, existingServerId);
+      result.recipesMigrated += 1;
+      migratedRecipeIds.push(recipe.id);
+      continue;
+    }
     try {
       const { data } = await api.post<{ recipe: Recipe }>(
         '/recipes',
@@ -170,7 +213,12 @@ async function migrateOnce(qc?: QueryClient): Promise<GuestMigrationResult> {
       // client-side id is absent.
       const raw = data.recipe as Recipe & { _id?: string };
       const serverId = raw.id ?? raw._id;
-      if (serverId) recipeIdMap.set(recipe.id, String(serverId));
+      if (serverId) {
+        recipeIdMap.set(recipe.id, String(serverId));
+        // Durable: if this recipe's plan is kept below, the recipe stays
+        // too, and the retry needs this server id without re-uploading.
+        useGuestStore.getState().recordMigratedRecipe(recipe.id, String(serverId));
+      }
       result.recipesMigrated += 1;
       migratedRecipeIds.push(recipe.id);
     } catch (err) {
@@ -284,7 +332,9 @@ async function migrateOnce(qc?: QueryClient): Promise<GuestMigrationResult> {
   // Recipes slotted into a plan that was kept (not migrated) stay too:
   // deleting a migrated recipe out from under a kept plan would leave the
   // plan referencing a guest recipe id that no longer exists, so the retry
-  // could never post it.
+  // could never post it. A deleted recipe's durable id mapping goes with
+  // it (deleteRecipe drops the entry); a kept recipe keeps its mapping
+  // so the retry can reuse its server id without re-uploading.
   const keptPlanRecipeIds = new Set<string>();
   for (const plan of guest.mealPlans) {
     if (migratedPlanIds.includes(plan.id)) continue;
@@ -296,6 +346,7 @@ async function migrateOnce(qc?: QueryClient): Promise<GuestMigrationResult> {
   }
   for (const id of migratedPlanIds) store.deleteMealPlan(id);
   if (pantryMerged) store.clearPantry();
+  if (allergiesMigrated) store.clearAllergies();
   for (const id of regeneratedListIds) store.deleteGroceryList(id);
   // A durable plan-id mapping is only needed while a local grocery list
   // still references that guest plan; drop it once no such list remains

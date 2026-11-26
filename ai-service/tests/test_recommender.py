@@ -148,3 +148,41 @@ def test_dairy_allergy_still_returns_non_dairy_recipes():
     )
     assert results
     assert "ratatouille" in {r.recipe_id for r in results}
+
+
+def test_dairy_allergy_does_not_exclude_coconut_milk_recipes():
+    s = _make_service()
+    # Thai Green Curry's only "milk" is coconut milk: not dairy.
+    results = s.recommend(
+        ingredients=["chicken", "rice", "coconut milk", "basil"],
+        dietary_preferences=[],
+        allergies=["dairy"],
+        top_k=20,
+    )
+    assert "thai-green-curry" in {r.recipe_id for r in results}
+    assert "chickpea-curry" in {r.recipe_id for r in results}
+
+
+def test_soy_allergy_still_excludes_soy_milk_recipe():
+    s = RecommenderService()
+    s.fit(
+        [
+            Recipe("soy-drink", "Soy Drink", ("soy milk", "sugar"), ("vegan",), "american"),
+            Recipe("berry-drink", "Berry Drink", ("berries", "water"), ("vegan",), "american"),
+        ]
+    )
+    results = s.recommend(
+        ingredients=["soy milk", "sugar"],
+        dietary_preferences=[],
+        allergies=["soy"],
+        top_k=5,
+    )
+    assert "soy-drink" not in {r.recipe_id for r in results}
+    # Soy milk is not dairy, so a dairy allergy must not exclude it.
+    dairy_results = s.recommend(
+        ingredients=["soy milk", "sugar"],
+        dietary_preferences=[],
+        allergies=["dairy"],
+        top_k=5,
+    )
+    assert "soy-drink" in {r.recipe_id for r in dairy_results}

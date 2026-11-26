@@ -198,6 +198,82 @@ describe('migrateGuestData', () => {
     void goodPlan;
   });
 
+  it('reuses a kept recipe\'s server id on retry instead of uploading it again', async () => {
+    const s = useGuestStore.getState();
+    const failing = s.addRecipe(soupInput);
+    const ok = s.addRecipe({ ...soupInput, title: 'Second Soup' });
+    const keptPlan = s.createMealPlan('2026-11-23');
+    s.assignSlot(keptPlan.id, 'Monday', 'lunch', failing);
+    s.assignSlot(keptPlan.id, 'Monday', 'dinner', ok);
+    // First run: the failing recipe blocks the plan, but the other recipe
+    // migrates — and the plan keeps both recipes for retry.
+    mockedPost.mockImplementation(async (url: string, body: unknown) => {
+      if (url === '/recipes') {
+        if ((body as { title: string }).title === 'Guest Soup') {
+          throw new Error('gatekeeper rejected');
+        }
+        return { data: { recipe: { id: 'server-recipe-2' } } };
+      }
+      if (url === '/mealplans') {
+        return { data: { plan: { id: 'server-plan-9' } } };
+      }
+      throw new Error(`unexpected POST ${url}`);
+    });
+
+    const first = await migrateGuestData();
+    expect(first.recipesMigrated).toBe(1);
+    expect(first.recipesFailed).toBe(1);
+    expect(first.plansMigrated).toBe(0);
+    // The migrated recipe's server id is persisted, not just held in
+    // memory, while the recipe itself stays for the retry.
+    expect(useGuestStore.getState().recipes.map((r) => r.title).sort()).toEqual([
+      'Guest Soup',
+      'Second Soup',
+    ]);
+    expect(useGuestStore.getState().migratedRecipeIds[ok.id]).toBe('server-recipe-2');
+    const stored = JSON.parse(localStorage.getItem('mealmate.guest') ?? '{}') as {
+      state?: { migratedRecipeIds?: Record<string, string> };
+    };
+    expect(stored.state?.migratedRecipeIds?.[ok.id]).toBe('server-recipe-2');
+
+    // Retry: the failing recipe now succeeds, and the already-migrated
+    // recipe must NOT be uploaded a second time.
+    mockedPost.mockClear();
+    mockedPost.mockImplementation(async (url: string) => {
+      if (url === '/recipes') {
+        return { data: { recipe: { id: 'server-recipe-1' } } };
+      }
+      if (url === '/mealplans') {
+        return { data: { plan: { id: 'server-plan-10' } } };
+      }
+      throw new Error(`unexpected POST ${url}`);
+    });
+
+    const second = await migrateGuestData();
+    const recipeCalls = mockedPost.mock.calls.filter((c) => c[0] === '/recipes');
+    expect(recipeCalls).toHaveLength(1);
+    expect((recipeCalls[0]?.[1] as { title: string }).title).toBe('Guest Soup');
+    expect(second).toEqual(
+      expect.objectContaining({ recipesMigrated: 2, recipesFailed: 0, plansMigrated: 1 })
+    );
+    // The kept plan posts with the ORIGINAL server id for the reused
+    // recipe — no second server copy exists to point at.
+    const planCalls = mockedPost.mock.calls.filter((c) => c[0] === '/mealplans');
+    expect(planCalls).toHaveLength(1);
+    const posted = planCalls[0]?.[1] as {
+      weekStartDate: string;
+      days: Array<{ day: string; lunch: unknown; dinner: unknown }>;
+    };
+    expect(posted.weekStartDate).toBe('2026-11-23');
+    expect(posted.days.find((d) => d.day === 'Monday')?.lunch).toBe('server-recipe-1');
+    expect(posted.days.find((d) => d.day === 'Monday')?.dinner).toBe('server-recipe-2');
+    // Both recipes are gone now, and their mappings go with them.
+    expect(useGuestStore.getState().recipes).toEqual([]);
+    expect(useGuestStore.getState().mealPlans).toEqual([]);
+    expect(useGuestStore.getState().migratedRecipeIds[ok.id]).toBeUndefined();
+    expect(useGuestStore.getState().migratedRecipeIds[failing.id]).toBeUndefined();
+  });
+
   it('recovers a leftover grocery list on the next run via the durably stored server plan id', async () => {
     const { plan } = seedGuestData();
     mockedPost.mockImplementation(async (url: string) => {
@@ -319,5 +395,95 @@ describe('migrateGuestData', () => {
     expect(mockedPost).not.toHaveBeenCalled();
     expect(result.recipesMigrated).toBe(0);
     expect(useGuestStore.getState().recipes).toHaveLength(1);
+  });
+
+  it('merges guest allergies into the account allergies (union, no duplicates) and clears them', async () => {
+    const accountUser: User = { ...testUser, allergies: ['dairy', 'gluten'] };
+    useAuthStore.setState({ user: accountUser });
+    mockedGet.mockResolvedValue({ data: { user: accountUser } });
+    seedGuestData();
+    const guest = useGuestStore.getState();
+    guest.addTag('allergies', 'dairy');
+    guest.addTag('allergies', 'peanuts');
+    // Stateful mock: the server applies each PATCH to the current user
+    // and returns it, so the allergy and pantry PATCHes do not clobber
+    // each other the way a fixed response would.
+    let serverUser: User = { ...accountUser };
+    mockedPost.mockImplementation(async (url: string) => {
+      if (url === '/recipes') return { data: { recipe: { id: 'server-recipe-1' } } };
+      if (url === '/mealplans') return { data: { plan: { id: 'server-plan-1' } } };
+      if (url === '/grocery/generate') return { data: { list: { id: 'server-list-1' } } };
+      throw new Error(`unexpected POST ${url}`);
+    });
+    mockedPatch.mockImplementation(async (_url: string, body: Record<string, unknown>) => {
+      serverUser = { ...serverUser, ...body } as User;
+      return { data: { user: serverUser } };
+    });
+
+    await migrateGuestData();
+
+    // 'dairy' was already on the account (no duplicate); 'gluten' is
+    // preserved; 'peanuts' is added.
+    expect(mockedPatch).toHaveBeenCalledWith('/auth/me', {
+      allergies: ['dairy', 'gluten', 'peanuts'],
+    });
+    expect(useGuestStore.getState().allergies).toEqual([]);
+    expect(useAuthStore.getState().user?.allergies).toEqual(['dairy', 'gluten', 'peanuts']);
+  });
+
+  it('migrates allergies even when they are the only guest data', async () => {
+    const guest = useGuestStore.getState();
+    guest.addTag('allergies', 'dairy');
+    let serverUser: User = { ...testUser };
+    mockedPatch.mockImplementation(async (_url: string, body: Record<string, unknown>) => {
+      serverUser = { ...serverUser, ...body } as User;
+      return { data: { user: serverUser } };
+    });
+
+    await migrateGuestData();
+
+    expect(mockedPatch).toHaveBeenCalledWith('/auth/me', { allergies: ['dairy'] });
+    expect(mockedPost).not.toHaveBeenCalled();
+    expect(useGuestStore.getState().allergies).toEqual([]);
+    expect(useAuthStore.getState().user?.allergies).toEqual(['dairy']);
+  });
+
+  it('keeps guest allergies for retry when the allergy PATCH fails', async () => {
+    const guest = useGuestStore.getState();
+    guest.addTag('allergies', 'dairy');
+    guest.addTag('allergies', 'peanuts');
+    mockedPatch.mockRejectedValue(new Error('server down'));
+
+    await migrateGuestData();
+
+    expect(mockedPatch).toHaveBeenCalledWith('/auth/me', {
+      allergies: ['dairy', 'peanuts'],
+    });
+    // The PATCH failed, so the guest allergies stay for a later sign-in.
+    expect(useGuestStore.getState().allergies).toEqual(['dairy', 'peanuts']);
+    // The account user is untouched.
+    expect(useAuthStore.getState().user?.allergies).toEqual([]);
+  });
+
+  it('makes no allergy API call when the guest has no allergies', async () => {
+    seedGuestData();
+    mockedPost.mockImplementation(async (url: string) => {
+      if (url === '/recipes') return { data: { recipe: { id: 'server-recipe-1' } } };
+      if (url === '/mealplans') return { data: { plan: { id: 'server-plan-1' } } };
+      if (url === '/grocery/generate') return { data: { list: { id: 'server-list-1' } } };
+      throw new Error(`unexpected POST ${url}`);
+    });
+    mockedPatch.mockResolvedValue({
+      data: { user: { ...testUser, pantry: [...testUser.pantry, { ingredient: 'Onion' }] } },
+    });
+
+    await migrateGuestData();
+
+    // The pantry PATCH still happens, but no call carries an allergies field.
+    expect(mockedPatch).toHaveBeenCalled();
+    for (const call of mockedPatch.mock.calls) {
+      expect(call[1]).not.toHaveProperty('allergies');
+    }
+    expect(useGuestStore.getState().allergies).toEqual([]);
   });
 });

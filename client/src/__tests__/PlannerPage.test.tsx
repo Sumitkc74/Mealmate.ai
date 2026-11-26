@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useGuestStore } from '@/stores/guestStore';
 import { api } from '@/lib/api';
 import { startOfWeekMondayUTC, toIsoDate } from '@/lib/week';
+import type { Recipe } from '@/types';
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
@@ -305,6 +306,121 @@ describe('PlannerPage', () => {
         );
       });
       expect(screen.queryByRole('dialog', { name: /allergy warning/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('guest manual add allergy warn-and-confirm', () => {
+    const pancakes: Recipe = {
+      id: 'r1',
+      slug: 'fluffy-pancakes',
+      title: 'Fluffy Pancakes',
+      ingredients: [
+        { name: 'flour' },
+        { name: 'milk' },
+        { name: 'egg' },
+        { name: 'butter' },
+        { name: 'sugar' },
+      ],
+      instructions: ['Mix and cook.'],
+      prepTime: 5,
+      cookTime: 10,
+      servings: 2,
+      tags: [],
+      difficulty: 'easy',
+    };
+    const stirFry: Recipe = {
+      id: 'r2',
+      slug: 'veggie-stir-fry',
+      title: 'Veggie Stir Fry',
+      ingredients: [{ name: 'rice' }, { name: 'tomato' }, { name: 'garlic' }],
+      instructions: ['Stir and fry.'],
+      prepTime: 5,
+      cookTime: 10,
+      servings: 2,
+      tags: [],
+      difficulty: 'easy',
+    };
+
+    function seedGuest(allergies: string[], recipes: Recipe[]) {
+      useAuthStore.setState({ user: null });
+      useGuestStore.setState({
+        allergies,
+        recipes,
+        mealPlans: [],
+        pantry: [],
+        groceryLists: [],
+      });
+      get.mockImplementation((url: string) => {
+        if (url === '/ai/capabilities') {
+          return Promise.resolve({
+            data: {
+              success: true,
+              llm: { provider: 'gemini', model: 'gemini-1.5-flash', available: true },
+              features: { recommend: true, similar: true, plan_week: true, chat: true, pantry_parse: true },
+            },
+          });
+        }
+        return Promise.resolve({ data: { items: [], total: 0, pages: 1, page: 1, limit: 25 } });
+      });
+    }
+
+    async function pickGuestRecipe(title: RegExp) {
+      const user = userEvent.setup();
+      renderPlanner();
+      await screen.findAllByTestId(/^slot-/);
+      const slot = screen.getByTestId('slot-Monday-breakfast');
+      await user.click(within(slot).getByRole('button', { name: '+ Add' }));
+      const pickBtn = await screen.findByRole('button', { name: title });
+      await user.click(pickBtn);
+      return user;
+    }
+
+    function guestMondayBreakfast() {
+      const plans = useGuestStore.getState().mealPlans;
+      const monday = plans[0]?.days.find((d) => d.day === 'Monday');
+      const slot = monday?.breakfast;
+      return slot && typeof slot === 'object' ? (slot as { title?: string }).title : undefined;
+    }
+
+    it('warns a guest with a dairy allergy and does NOT add the recipe when cancelled', async () => {
+      seedGuest(['dairy'], [pancakes]);
+      const user = await pickGuestRecipe(/fluffy pancakes/i);
+
+      const dialog = await screen.findByRole('dialog', { name: /allergy warning/i });
+      expect(dialog).toHaveTextContent(/contains milk/i);
+      expect(dialog).toHaveTextContent(/dairy allergy/i);
+
+      await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog', { name: /allergy warning/i })).not.toBeInTheDocument();
+      });
+      // Cancelling leaves the guest plan untouched — no plan was created.
+      expect(useGuestStore.getState().mealPlans).toHaveLength(0);
+      expect(post).not.toHaveBeenCalled();
+    });
+
+    it('adds the recipe to the guest plan when the warning is confirmed', async () => {
+      seedGuest(['dairy'], [pancakes]);
+      const user = await pickGuestRecipe(/fluffy pancakes/i);
+
+      const dialog = await screen.findByRole('dialog', { name: /allergy warning/i });
+      await user.click(within(dialog).getByRole('button', { name: 'Add anyway' }));
+
+      await waitFor(() => {
+        expect(guestMondayBreakfast()).toBe('Fluffy Pancakes');
+      });
+      expect(post).not.toHaveBeenCalled();
+    });
+
+    it('adds a safe recipe to the guest plan with no warning', async () => {
+      seedGuest(['dairy'], [stirFry]);
+      await pickGuestRecipe(/veggie stir fry/i);
+
+      await waitFor(() => {
+        expect(guestMondayBreakfast()).toBe('Veggie Stir Fry');
+      });
+      expect(screen.queryByRole('dialog', { name: /allergy warning/i })).not.toBeInTheDocument();
+      expect(post).not.toHaveBeenCalled();
     });
   });
 });

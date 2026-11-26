@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { useGuestStore, newGuestId } from '@/stores/guestStore';
-import { aggregateGuestGrocery } from '@/lib/guestPlan';
+import { aggregateGuestGrocery, findGuestRecipeAllergyConflict } from '@/lib/guestPlan';
 import { api } from '@/lib/api';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -13,7 +13,7 @@ import { RecipeDrawer } from '@/components/planner/RecipeDrawer';
 import { MealSlot } from '@/components/planner/MealSlot';
 import { RecipePickerModal } from '@/components/planner/RecipePickerModal';
 import { AllergyConfirmDialog } from '@/components/planner/AllergyConfirmDialog';
-import { findAllergyConflict, type AllergyConflict } from '@/lib/allergens';
+import { type AllergyConflict } from '@/lib/allergens';
 import { SustainabilityPanel } from '@/components/planner/SustainabilityPanel';
 import { ExportPlanPdfButton } from '@/components/planner/ExportPlanPdfButton';
 import {
@@ -87,6 +87,7 @@ export function PlannerPage() {
   // Guests work against the local guest store; signed-in users use the API.
   const guestPlans = useGuestStore((s) => s.mealPlans);
   const guestPantry = useGuestStore((s) => s.pantry);
+  const guestAllergies = useGuestStore((s) => s.allergies);
   const guestCreatePlan = useGuestStore((s) => s.createMealPlan);
   const guestAssignSlot = useGuestStore((s) => s.assignSlot);
   const guestAddGroceryList = useGuestStore((s) => s.addGroceryList);
@@ -143,27 +144,28 @@ export function PlannerPage() {
 
   /**
    * Manual add-to-plan choke point — every manual entry funnels through
-   * here (recipe picker, drag-and-drop from the drawer). Signed-in users
-   * with saved allergies get a warn-and-confirm when the picked recipe
-   * contains a conflicting ingredient; cancelling leaves the slot
-   * untouched. Guests have no saved allergies, so they skip the check.
+   * here (recipe picker, drag-and-drop from the drawer). Anyone with
+   * saved allergies — signed-in users from their profile, guests from
+   * the pantry page's allergy input (guest store) — gets a
+   * warn-and-confirm when the picked recipe contains a conflicting
+   * ingredient; cancelling leaves the slot untouched.
    */
   async function handleAssign(day: DayName, slot: Slot, recipeId: string | null) {
     setError(null);
-    if (recipeId && isAuthed && userAllergies.length > 0) {
-      const recipe = await resolveGuestRecipe(recipeId);
-      if (recipe) {
-        const conflict = findAllergyConflict(
-          recipe.ingredients.map((i) => i.name),
-          userAllergies
-        );
-        if (conflict) {
-          setAllergyConfirm({ day, slot, recipeId, conflict });
-          return;
+    if (recipeId) {
+      const allergies = isAuthed ? userAllergies : guestAllergies;
+      if (allergies.length > 0) {
+        const recipe = await resolveGuestRecipe(recipeId);
+        if (recipe) {
+          const conflict = findGuestRecipeAllergyConflict(recipe, allergies);
+          if (conflict) {
+            setAllergyConfirm({ day, slot, recipeId, conflict });
+            return;
+          }
         }
+        // Unresolvable recipe: fall through and assign (fail-open) rather
+        // than blocking the user over a lookup failure.
       }
-      // Unresolvable recipe: fall through and assign (fail-open) rather
-      // than blocking the user over a lookup failure.
     }
     await performAssign(day, slot, recipeId);
   }

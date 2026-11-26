@@ -8,6 +8,7 @@ import type {
   WeeklyNutrition,
 } from '@/types';
 import { newGuestId } from '@/stores/guestStore';
+import { findAllergyConflict, type AllergyConflict } from '@/lib/allergens';
 import { DAYS_OF_WEEK } from '@/lib/week';
 
 /**
@@ -91,6 +92,36 @@ export function collectPlanRecipes(plan: MealPlan): Recipe[] {
     }
   }
   return recipes;
+}
+
+/**
+ * First allergy conflict for one recipe against the guest's saved
+ * allergies, or `null` when the recipe is safe. Uses the same matcher as
+ * the signed-in check (`lib/allergens`): group expansion, whole-word
+ * matching, and the plant-milk exclusion, so a 'dairy' allergy flags
+ * milk/butter but not coconut milk, while a 'soy' allergy still catches
+ * soy milk.
+ */
+export function findGuestRecipeAllergyConflict(
+  recipe: Recipe,
+  allergies: string[]
+): AllergyConflict | null {
+  return findAllergyConflict(
+    recipe.ingredients.map((i) => i.name),
+    allergies
+  );
+}
+
+/**
+ * Exclude every recipe that conflicts with the guest's saved allergies.
+ * Guests build their plan by hand (no AI week generation), so this is
+ * the hard-exclusion filter for a candidate recipe list: conflicting
+ * recipes never reach the plan, safe recipes pass through unchanged.
+ * With no allergies saved, the list is returned as-is.
+ */
+export function filterSafeGuestRecipes(recipes: Recipe[], allergies: string[]): Recipe[] {
+  if (!allergies?.length) return recipes;
+  return recipes.filter((r) => findGuestRecipeAllergyConflict(r, allergies) === null);
 }
 
 /**

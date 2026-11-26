@@ -119,11 +119,21 @@ interface GuestState {
    * by then. Entries are dropped once no local list references the plan.
    */
   migratedPlanIds: Record<string, string>;
+  /**
+   * Guest recipe id -> server recipe id for recipes already migrated.
+   * Durable (persisted): a recipe kept because its plan was kept (the
+   * plan could not be posted while another of its recipes had failed)
+   * stays in the guest store for a later retry, and without this map the
+   * retry would re-upload it, creating a second server copy. Entries are
+   * dropped once the recipe itself is removed from the guest store.
+   */
+  migratedRecipeIds: Record<string, string>;
 
   // Pantry
   addPantryItem: (item: PantryItem) => void;
   removePantryItem: (idx: number) => void;
   clearPantry: () => void;
+  clearAllergies: () => void;
   setPantry: (items: PantryItem[]) => void;
   addTag: (field: 'dietaryPreferences' | 'allergies', value: string) => void;
   removeTag: (field: 'dietaryPreferences' | 'allergies', value: string) => void;
@@ -150,6 +160,8 @@ interface GuestState {
   addRecipe: (input: RecipeInput) => Recipe;
   updateRecipe: (id: string, input: Partial<RecipeInput>) => Recipe | null;
   deleteRecipe: (id: string) => void;
+  recordMigratedRecipe: (guestRecipeId: string, serverRecipeId: string) => void;
+  forgetMigratedRecipe: (guestRecipeId: string) => void;
 
   clearAll: () => void;
 }
@@ -164,11 +176,13 @@ export const useGuestStore = create<GuestState>()(
       groceryLists: [],
       recipes: [],
       migratedPlanIds: {},
+      migratedRecipeIds: {},
 
       addPantryItem: (item) => set((s) => ({ pantry: [...s.pantry, item] })),
       removePantryItem: (idx) =>
         set((s) => ({ pantry: s.pantry.filter((_, i) => i !== idx) })),
       clearPantry: () => set({ pantry: [] }),
+      clearAllergies: () => set({ allergies: [] }),
       setPantry: (items) => set({ pantry: items }),
 
       addTag: (field, value) => {
@@ -300,7 +314,28 @@ export const useGuestStore = create<GuestState>()(
         return updated;
       },
       deleteRecipe: (id) =>
-        set((s) => ({ recipes: s.recipes.filter((r) => r.id !== id) })),
+        set((s) => {
+          // No local item needs the mapping once the recipe itself is
+          // gone: the migration only consults it for recipes still in
+          // this list, and a kept plan's slot holds the full recipe.
+          const next = { ...s.migratedRecipeIds };
+          delete next[id];
+          return {
+            recipes: s.recipes.filter((r) => r.id !== id),
+            migratedRecipeIds: next,
+          };
+        }),
+      recordMigratedRecipe: (guestRecipeId, serverRecipeId) =>
+        set((s) => ({
+          migratedRecipeIds: { ...s.migratedRecipeIds, [guestRecipeId]: serverRecipeId },
+        })),
+      forgetMigratedRecipe: (guestRecipeId) =>
+        set((s) => {
+          if (!(guestRecipeId in s.migratedRecipeIds)) return s;
+          const next = { ...s.migratedRecipeIds };
+          delete next[guestRecipeId];
+          return { migratedRecipeIds: next };
+        }),
 
       clearAll: () =>
         set({
@@ -311,6 +346,7 @@ export const useGuestStore = create<GuestState>()(
           groceryLists: [],
           recipes: [],
           migratedPlanIds: {},
+          migratedRecipeIds: {},
         }),
     }),
     {
@@ -323,17 +359,19 @@ export const useGuestStore = create<GuestState>()(
         groceryLists: state.groceryLists,
         recipes: state.recipes,
         migratedPlanIds: state.migratedPlanIds,
+        migratedRecipeIds: state.migratedRecipeIds,
       }),
     }
   )
 );
 
 /** True when the guest has any local data worth migrating on sign-in. */
-export function hasGuestData(state: Pick<GuestState, 'pantry' | 'mealPlans' | 'groceryLists' | 'recipes'>): boolean {
+export function hasGuestData(state: Pick<GuestState, 'pantry' | 'mealPlans' | 'groceryLists' | 'recipes' | 'allergies'>): boolean {
   return (
     state.pantry.length > 0 ||
     state.mealPlans.length > 0 ||
     state.groceryLists.length > 0 ||
-    state.recipes.length > 0
+    state.recipes.length > 0 ||
+    state.allergies.length > 0
   );
 }

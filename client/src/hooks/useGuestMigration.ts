@@ -19,6 +19,7 @@ export function useGuestMigrationOnSignIn() {
       mealPlans: s.mealPlans,
       groceryLists: s.groceryLists,
       recipes: s.recipes,
+      allergies: s.allergies,
     })
   );
   const qc = useQueryClient();
@@ -42,6 +43,7 @@ export function useGuestMigrationOnSignIn() {
             mealPlans: useGuestStore.getState().mealPlans,
             groceryLists: useGuestStore.getState().groceryLists,
             recipes: useGuestStore.getState().recipes,
+            allergies: useGuestStore.getState().allergies,
           })
         ) {
           ranRef.current = false;

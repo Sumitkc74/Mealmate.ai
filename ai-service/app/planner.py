@@ -42,6 +42,7 @@ and the caller can override individual weights via ``MealPlanRequest.weights``.
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from typing import Any, Mapping
 
@@ -100,6 +101,39 @@ def _has_tag(recipe: Recipe, slot: str) -> bool:
     return any(t.lower() == slot_norm for t in recipe.tags)
 
 
+# Plant-based milks are NOT dairy milk: a saved "dairy" (or "milk")
+# allergy must not block a recipe whose only "milk" is a plant milk
+# ("coconut milk", "almond milk", ...). The "milk" term still matches
+# real milk, and a saved "soy" allergy still catches "soy milk"
+# because the "soy" term itself matches. Keep this list and rule
+# identical in planner.py, recommender.py, recipe_gen.py,
+# server/src/utils/allergens.ts and client/src/lib/allergens.ts.
+# Do not change the 7-group allergen hierarchy.
+PLANT_MILK_QUALIFIERS: tuple[str, ...] = (
+    "almond", "cashew", "coconut", "flax", "hazelnut", "hemp",
+    "macadamia", "oat", "pea", "pecan", "pistachio", "rice",
+    "soy", "sunflower", "walnut",
+)
+_PLANT_MILK_RE = re.compile(
+    r"\b(?:" + "|".join(PLANT_MILK_QUALIFIERS) + r")[-\s]+milks?\b"
+)
+
+
+def _strip_plant_milks(text: str) -> str:
+    """Remove plant-milk phrases from ``text`` so a bare "milk" match only
+    sees real (dairy) milk. A recipe with both plant milk and real milk
+    still matches, because only the plant-milk phrase is removed."""
+    return _PLANT_MILK_RE.sub(" ", text)
+
+
+def _term_matches_ingredient(term: str, ingredient: str) -> bool:
+    """Substring match of an allergen term against one (lowercased)
+    ingredient, except a bare "milk" term never matches a plant milk."""
+    if term == "milk":
+        return "milk" in _strip_plant_milks(ingredient)
+    return term in ingredient
+
+
 def _violates_allergy(recipe: Recipe, allergies: list[str]) -> bool:
     if not allergies:
         return False
@@ -113,7 +147,7 @@ def _violates_allergy(recipe: Recipe, allergies: list[str]) -> bool:
     norm = [a for a in (a.lower().strip() for a in expanded) if a]
     for ing in recipe.ingredients:
         ing_l = ing.lower()
-        if any(a in ing_l for a in norm):
+        if any(_term_matches_ingredient(a, ing_l) for a in norm):
             return True
     return False
 
