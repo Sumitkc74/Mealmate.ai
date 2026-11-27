@@ -84,12 +84,12 @@ export async function sendDeletionConfirmEmail(
     subject: 'Confirm your MealMate account deletion',
     text:
       `You asked to delete your MealMate account.\n\n` +
-      `Confirm it here (the link works for 7 days):\n${confirmUrl}\n\n` +
+      `Confirm it here (the link works for 30 days):\n${confirmUrl}\n\n` +
       `Once confirmed, your account will be deleted 30 days later. Signing in at any point before then cancels the deletion.\n\n` +
       `If you did not ask for this, you can ignore this email — nothing will be deleted.`,
     html:
       `<p>You asked to delete your MealMate account.</p>` +
-      `<p><a href="${confirmUrl}">Confirm the deletion</a> (the link works for 7 days).</p>` +
+      `<p><a href="${confirmUrl}">Confirm the deletion</a> (the link works for 30 days).</p>` +
       `<p>Once confirmed, your account will be deleted 30 days later. Signing in at any point before then cancels the deletion.</p>` +
       `<p>If you did not ask for this, you can ignore this email — nothing will be deleted.</p>`,
   });
@@ -143,7 +143,7 @@ export async function sendDeletionReviewEmail(
     `  A recipe they created: ${details.claimedRecipe ?? '(not given)'}\n` +
     `  Contact email: ${details.contactEmail}\n` +
     `  Recipes on deletion: ${details.deleteRecipes ? 'Delete them' : 'Leave them as community recipes'}\n\n` +
-    `If the claim matches the account, approve it here (the link works for 7 days):\n${approveUrl}\n\n` +
+    `If the claim matches the account, approve it here (the link works for 30 days):\n${approveUrl}\n\n` +
     `Once approved, the requester and the account owner are both emailed, and the account is deleted 30 days later unless the owner signs in. If the claim does not match, ignore this email — nothing happens.`;
   await sendEmail({
     to,
@@ -165,7 +165,7 @@ export async function sendDeletionReviewEmail(
       `A recipe they created: ${details.claimedRecipe ?? '(not given)'}<br/>` +
       `Contact email: ${details.contactEmail}<br/>` +
       `Recipes on deletion: ${details.deleteRecipes ? 'Delete them' : 'Leave them as community recipes'}</p>` +
-      `<p>If the claim matches the account, <a href="${approveUrl}">approve it here</a> (the link works for 7 days).</p>` +
+      `<p>If the claim matches the account, <a href="${approveUrl}">approve it here</a> (the link works for 30 days).</p>` +
       `<p>Once approved, the requester and the account owner are both emailed, and the account is deleted 30 days later unless the owner signs in. If the claim does not match, ignore this email — nothing happens.</p>`,
   });
   logger.info({ to }, 'account deletion review email sent');

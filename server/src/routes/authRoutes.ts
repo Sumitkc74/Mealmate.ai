@@ -16,6 +16,7 @@ import {
 } from '../controllers/authController';
 import { validate } from '../middleware/validate';
 import { protect } from '../middleware/authMiddleware';
+import { env } from '../config/env';
 import {
   registerSchema,
   loginSchema,
@@ -29,10 +30,12 @@ import {
 
 const router = Router();
 
-// Tighter rate limit on auth endpoints to deter brute-force
+// Tighter rate limit on auth endpoints to deter brute-force. The test
+// suite exercises these endpoints heavily from one IP, so the limit is
+// relaxed there only; production stays at 20.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 min
-  max: 20,
+  max: env.NODE_ENV === 'test' ? 1000 : 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Too many auth attempts, please try again later' },

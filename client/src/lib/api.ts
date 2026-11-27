@@ -96,3 +96,19 @@ export function extractErrorMessage(err: unknown, fallback = 'Something went wro
   if (err instanceof Error) return err.message;
   return fallback;
 }
+
+/**
+ * Whether the failed request can be retried by submitting a new one.
+ * The server sets `details.retryable` on deletion-link failures (unknown,
+ * expired, or cancelled links); already-approved and already-deleted
+ * links are not retryable. Anything without that flag is not retryable.
+ */
+export function extractErrorRetryable(err: unknown): boolean {
+  if (axios.isAxiosError(err)) {
+    const data = err.response?.data as
+      | { details?: { retryable?: boolean } }
+      | undefined;
+    return data?.details?.retryable === true;
+  }
+  return false;
+}

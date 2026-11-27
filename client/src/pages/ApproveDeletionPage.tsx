@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useApproveDeletion } from '@/hooks/useAuth';
-import { extractErrorMessage } from '@/lib/api';
+import { extractErrorMessage, extractErrorRetryable } from '@/lib/api';
 import { usePageMetadata } from '@/hooks/usePageMetadata';
 
 /**
@@ -24,6 +24,7 @@ export function ApproveDeletionPage() {
   const [done, setDone] = useState(false);
   const [deleteAt, setDeleteAt] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [canRetry, setCanRetry] = useState(false);
   const approveDeletion = useApproveDeletion();
   const submittedRef = useRef(false);
 
@@ -43,6 +44,7 @@ export function ApproveDeletionPage() {
             'This approval link is invalid or has expired.'
           )
         );
+        setCanRetry(extractErrorRetryable(err));
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
@@ -73,12 +75,22 @@ export function ApproveDeletionPage() {
             {' '}unless the owner signs in first.
           </p>
         ) : formError ? (
-          <div
-            role="alert"
-            className="mt-6 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
-          >
-            {formError}
-          </div>
+          <>
+            <div
+              role="alert"
+              className="mt-6 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+            >
+              {formError}
+            </div>
+            {canRetry && (
+              <Link
+                to="/request-deletion"
+                className="mt-4 block w-full rounded-xl bg-brand-700 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-brand-800"
+              >
+                Request deletion again
+              </Link>
+            )}
+          </>
         ) : (
           <p className="mt-6 text-sm text-ink-soft">Approving the request…</p>
         )}

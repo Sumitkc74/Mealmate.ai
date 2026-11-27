@@ -69,6 +69,43 @@ describe('ConfirmDeletionPage', () => {
     ).toBeInTheDocument();
   });
 
+  it('offers a new link when the failure is retryable', async () => {
+    mockedPost.mockRejectedValue({
+      isAxiosError: true,
+      response: {
+        data: {
+          message: 'Invalid or expired confirmation link',
+          details: { retryable: true },
+        },
+      },
+    });
+    renderPage(`/confirm-deletion?token=${TOKEN}`);
+    expect(
+      await screen.findByText(/Invalid or expired confirmation link/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: /Request a new confirmation link/i })
+    ).toHaveAttribute('href', '/request-deletion');
+  });
+
+  it('offers no new link when the failure is not retryable', async () => {
+    mockedPost.mockRejectedValue({
+      isAxiosError: true,
+      response: {
+        data: {
+          message: 'This account has already been deleted.',
+          details: { retryable: false },
+        },
+      },
+    });
+    renderPage(`/confirm-deletion?token=${TOKEN}`);
+    expect(await screen.findByText(/already been deleted/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: /Request a new confirmation link/i })
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Back to sign in/i })).toBeInTheDocument();
+  });
+
   it('shows the missing-token message when the link has no token', async () => {
     renderPage('/confirm-deletion');
     expect(await screen.findByText(/missing its token/i)).toBeInTheDocument();

@@ -243,7 +243,7 @@ export const deleteAccount = asyncHandler(async (req: Request, res: Response) =>
 });
 
 /** How long a deletion confirmation / approval link stays valid. */
-const DELETION_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const DELETION_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 /** How long after confirmation / approval the account is deleted. */
 const DELETION_GRACE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -342,6 +342,63 @@ export const requestDeletion = asyncHandler<unknown, unknown, RequestDeletionInp
 );
 
 /**
+ * When a deletion confirmation / approval link fails, say what actually
+ * happened instead of a generic "invalid or expired". A link can fail
+ * because the token is unknown, because it expired, because the request
+ * was already approved/confirmed, or because the owner signed in and the
+ * request was cancelled. The token is unguessable, so revealing the
+ * request's state to whoever holds it is safe.
+ *
+ * `retryable` tells the frontend whether a "request again" button makes
+ * sense: true when the user needs to submit a new request (unknown,
+ * expired, or cancelled), false when the deletion is already scheduled
+ * or the account is already gone.
+ */
+async function deletionLinkFailure(
+  tokenHash: string,
+  kind: 'confirm' | 'approve'
+): Promise<{ message: string; retryable: boolean }> {
+  const label = kind === 'confirm' ? 'confirmation' : 'approval';
+  const request =
+    kind === 'confirm'
+      ? await DeletionRequest.findOne({ confirmTokenHash: tokenHash }).select(
+          '+confirmTokenHash +confirmTokenExpires'
+        )
+      : await DeletionRequest.findOne({ approveTokenHash: tokenHash }).select(
+          '+approveTokenHash +approveTokenExpires'
+        );
+  if (!request) return { message: `Invalid or expired ${label} link`, retryable: true };
+  if (request.status === 'cancelled') {
+    return {
+      message:
+        'This deletion request was cancelled because the account owner signed in. Submit a new request if the account should still be deleted.',
+      retryable: true,
+    };
+  }
+  if (request.status === 'scheduled') {
+    const when = request.deleteAt
+      ? ` on ${request.deleteAt.toISOString().slice(0, 10)}`
+      : '';
+    return {
+      message: `This deletion request was already approved. The account is scheduled for deletion${when}.`,
+      retryable: false,
+    };
+  }
+  if (request.status === 'completed') {
+    return { message: 'This account has already been deleted.', retryable: false };
+  }
+  const expires =
+    kind === 'confirm' ? request.confirmTokenExpires : request.approveTokenExpires;
+  if (expires && expires.getTime() <= Date.now()) {
+    return {
+      message: `This ${label} link has expired. Submit a new deletion request.`,
+      retryable: true,
+    };
+  }
+  return { message: `Invalid or expired ${label} link`, retryable: true };
+}
+
+/**
  * Confirm a deletion request from the email-access path. The link click is
  * the verification, so this schedules the deletion: deleteAt is now +
  * 30 days. The token is single-use. Signing in before deleteAt cancels it.
@@ -355,7 +412,10 @@ export const confirmDeletion = asyncHandler<unknown, unknown, DeletionTokenInput
       confirmTokenExpires: { $gt: new Date() },
       status: 'pending-confirmation',
     }).select('+confirmTokenHash +confirmTokenExpires');
-    if (!request) throw AppError.badRequest('Invalid or expired confirmation link');
+    if (!request) {
+      const failure = await deletionLinkFailure(tokenHash, 'confirm');
+      throw AppError.badRequest(failure.message, { retryable: failure.retryable });
+    }
 
     const user = await User.findById(request.user);
     if (!user) {
@@ -402,7 +462,10 @@ export const approveDeletion = asyncHandler<unknown, unknown, DeletionTokenInput
       approveTokenExpires: { $gt: new Date() },
       status: 'pending-approval',
     }).select('+approveTokenHash +approveTokenExpires');
-    if (!request) throw AppError.badRequest('Invalid or expired approval link');
+    if (!request) {
+      const failure = await deletionLinkFailure(tokenHash, 'approve');
+      throw AppError.badRequest(failure.message, { retryable: failure.retryable });
+    }
 
     const user = await User.findById(request.user);
     if (!user) {

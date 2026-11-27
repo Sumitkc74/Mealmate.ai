@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useConfirmDeletion } from '@/hooks/useAuth';
-import { extractErrorMessage } from '@/lib/api';
+import { extractErrorMessage, extractErrorRetryable } from '@/lib/api';
 import { usePageMetadata } from '@/hooks/usePageMetadata';
 
 /**
@@ -23,6 +23,7 @@ export function ConfirmDeletionPage() {
   const [done, setDone] = useState(false);
   const [deleteAt, setDeleteAt] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [canRetry, setCanRetry] = useState(false);
   const confirmDeletion = useConfirmDeletion();
   const submittedRef = useRef(false);
 
@@ -42,6 +43,7 @@ export function ConfirmDeletionPage() {
             'This confirmation link is invalid or has expired. Request a new one.'
           )
         );
+        setCanRetry(extractErrorRetryable(err));
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
@@ -82,7 +84,7 @@ export function ConfirmDeletionPage() {
         )}
 
         <p className="mt-7 text-center text-sm text-ink-soft">
-          {!token || formError ? (
+          {!token || (formError && canRetry) ? (
             <Link
               to="/request-deletion"
               className="font-medium text-brand-700 hover:underline"

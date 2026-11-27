@@ -68,6 +68,44 @@ describe('ApproveDeletionPage', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows a request-again button when the failure is retryable', async () => {
+    mockedPost.mockRejectedValue({
+      isAxiosError: true,
+      response: {
+        data: {
+          message: 'Invalid or expired approval link',
+          details: { retryable: true },
+        },
+      },
+    });
+    renderPage(`/approve-deletion?token=${TOKEN}`);
+    expect(
+      await screen.findByText(/Invalid or expired approval link/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: /Request deletion again/i })
+    ).toHaveAttribute('href', '/request-deletion');
+  });
+
+  it('shows no request-again button when the failure is not retryable', async () => {
+    mockedPost.mockRejectedValue({
+      isAxiosError: true,
+      response: {
+        data: {
+          message: 'This account has already been deleted.',
+          details: { retryable: false },
+        },
+      },
+    });
+    renderPage(`/approve-deletion?token=${TOKEN}`);
+    expect(
+      await screen.findByText(/already been deleted/i)
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: /Request deletion again/i })
+    ).not.toBeInTheDocument();
+  });
+
   it('shows the missing-token message when the link has no token', async () => {
     renderPage('/approve-deletion');
     expect(await screen.findByText(/missing its token/i)).toBeInTheDocument();

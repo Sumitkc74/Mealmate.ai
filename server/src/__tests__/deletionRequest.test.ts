@@ -259,6 +259,27 @@ describe('POST /api/auth/confirm-deletion', () => {
       .post('/api/auth/confirm-deletion')
       .send({ token: RAW_TOKEN });
     expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/expired/i);
+    expect(res.body.details.retryable).toBe(true);
+  });
+
+  it('says a cancelled request was cancelled by sign-in, not "invalid"', async () => {
+    const dbUser = await User.findOne({ email: user.email });
+    await DeletionRequest.create({
+      user: dbUser!._id,
+      contactEmail: 'reachme@example.com',
+      claimedName: user.name,
+      deleteRecipes: false,
+      status: 'cancelled',
+      confirmTokenHash: hashToken(RAW_TOKEN),
+      confirmTokenExpires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+    const res = await request(app)
+      .post('/api/auth/confirm-deletion')
+      .send({ token: RAW_TOKEN });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/cancelled because the account owner signed in/i);
+    expect(res.body.details.retryable).toBe(true);
   });
 });
 
@@ -273,7 +294,7 @@ describe('POST /api/auth/approve-deletion', () => {
       deleteRecipes: false,
       status: 'pending-approval',
       approveTokenHash: hashToken(RAW_TOKEN),
-      approveTokenExpires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      approveTokenExpires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     });
     return RAW_TOKEN;
   }
@@ -323,6 +344,81 @@ describe('POST /api/auth/approve-deletion', () => {
     expect(mockedApprovedToRequester).not.toHaveBeenCalled();
     expect(mockedApprovedToOwner).not.toHaveBeenCalled();
   });
+
+  it('says a cancelled request was cancelled by sign-in, not "invalid"', async () => {
+    const dbUser = await User.findOne({ email: user.email });
+    await DeletionRequest.create({
+      user: dbUser!._id,
+      contactEmail: 'reachme@example.com',
+      claimedName: user.name,
+      claimedRecipe: 'Deleter Soup',
+      deleteRecipes: false,
+      status: 'cancelled',
+      approveTokenHash: hashToken(RAW_TOKEN),
+      approveTokenExpires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+    const res = await request(app)
+      .post('/api/auth/approve-deletion')
+      .send({ token: RAW_TOKEN });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/cancelled because the account owner signed in/i);
+    expect(res.body.details.retryable).toBe(true);
+    expect(mockedApprovedToRequester).not.toHaveBeenCalled();
+    expect(mockedApprovedToOwner).not.toHaveBeenCalled();
+  });
+
+  it('says an already-approved request was already approved', async () => {
+    const dbUser = await User.findOne({ email: user.email });
+    await DeletionRequest.create({
+      user: dbUser!._id,
+      contactEmail: 'reachme@example.com',
+      claimedName: user.name,
+      claimedRecipe: 'Deleter Soup',
+      deleteRecipes: false,
+      status: 'scheduled',
+      deleteAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      approveTokenHash: hashToken(RAW_TOKEN),
+      approveTokenExpires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+    const res = await request(app)
+      .post('/api/auth/approve-deletion')
+      .send({ token: RAW_TOKEN });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/already approved/i);
+    expect(res.body.details.retryable).toBe(false);
+    expect(mockedApprovedToRequester).not.toHaveBeenCalled();
+    expect(mockedApprovedToOwner).not.toHaveBeenCalled();
+  });
+
+  it('says an expired approval link has expired', async () => {
+    const dbUser = await User.findOne({ email: user.email });
+    await DeletionRequest.create({
+      user: dbUser!._id,
+      contactEmail: 'reachme@example.com',
+      claimedName: user.name,
+      claimedRecipe: 'Deleter Soup',
+      deleteRecipes: false,
+      status: 'pending-approval',
+      approveTokenHash: hashToken(RAW_TOKEN),
+      approveTokenExpires: new Date(Date.now() - 1000),
+    });
+    const res = await request(app)
+      .post('/api/auth/approve-deletion')
+      .send({ token: RAW_TOKEN });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/has expired/i);
+    expect(res.body.details.retryable).toBe(true);
+    expect(mockedApprovedToRequester).not.toHaveBeenCalled();
+    expect(mockedApprovedToOwner).not.toHaveBeenCalled();
+  });
+
+  it('a bogus token is retryable', async () => {
+    const res = await request(app)
+      .post('/api/auth/approve-deletion')
+      .send({ token: 'deadbeef' });
+    expect(res.status).toBe(400);
+    expect(res.body.details.retryable).toBe(true);
+  });
 });
 
 describe('sign-in cancels pending deletions', () => {
@@ -343,7 +439,7 @@ describe('sign-in cancels pending deletions', () => {
       deleteRecipes: false,
       status: 'pending-confirmation',
       confirmTokenHash: hashToken(RAW_TOKEN),
-      confirmTokenExpires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      confirmTokenExpires: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     });
 
     const res = await request(app)
