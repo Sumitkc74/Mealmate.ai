@@ -37,6 +37,13 @@ export interface IRecipe {
   servings: number;
   nutrition: INutrition;
   imageUrl?: string;
+  /**
+   * Where the recipe photo came from: 'wikimedia' (CC-licensed, needs
+   * attribution), 'pollinations' (AI-generated), or 'user' (pasted by the
+   * author). Derived from the image URL host at write time, before the
+   * image cache rewrites the URL to a local path.
+   */
+  imageSource?: 'wikimedia' | 'pollinations' | 'user';
   source?: string;
   difficulty: 'easy' | 'medium' | 'hard';
   createdBy?: Types.ObjectId;
@@ -110,6 +117,7 @@ const RecipeSchema = new Schema<IRecipe, RecipeModel, Record<string, never>, Rec
     servings: { type: Number, required: true, min: 1, max: 100 },
     nutrition: { type: NutritionSchema, default: () => ({}) },
     imageUrl: { type: String, trim: true },
+    imageSource: { type: String, enum: ['wikimedia', 'pollinations', 'user'] },
     source: { type: String, trim: true },
     difficulty: { type: String, enum: ['easy', 'medium', 'hard'], default: 'medium' },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User' },

@@ -5,6 +5,7 @@ import { useDeleteRecipe, useRecipe } from '@/hooks/useRecipes';
 import { useAuthStore } from '@/stores/authStore';
 import { useGuestStore, isGuestId } from '@/stores/guestStore';
 import { extractErrorMessage, resolveImageUrl } from '@/lib/api';
+import { getImageAttribution } from '@/lib/imageAttribution';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { SimilarRecipes } from '@/components/recipes/SimilarRecipes';
 import { IngredientSubstituteModal } from '@/components/recipes/IngredientSubstituteModal';
@@ -358,6 +359,27 @@ export function RecipeDetailPage() {
           </div>
         )}
       </div>
+      {showImage &&
+        (() => {
+          const attribution = getImageAttribution(recipe.imageUrl, recipe.imageSource);
+          if (!attribution) return null;
+          return (
+            <p className="text-[11px] text-text-muted">
+              {attribution.href ? (
+                <a
+                  href={attribution.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:underline"
+                >
+                  {attribution.label}
+                </a>
+              ) : (
+                attribution.label
+              )}
+            </p>
+          );
+        })()}
 
       <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-text-muted">
         <span className="rounded border border-line bg-card px-2.5 py-1">Prep: {recipe.prepTime} min</span>

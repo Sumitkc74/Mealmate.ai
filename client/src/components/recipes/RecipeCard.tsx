@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import type { Recipe } from '@/types';
 import { cn } from '@/lib/cn';
 import { resolveImageUrl } from '@/lib/api';
+import { getImageAttribution } from '@/lib/imageAttribution';
 
 interface RecipeCardProps {
   recipe: Recipe;
@@ -100,6 +101,15 @@ export function RecipeCard({ recipe, className }: RecipeCardProps) {
             ))}
           </div>
         )}
+
+        {showImage &&
+          (() => {
+            const attribution = getImageAttribution(recipe.imageUrl, recipe.imageSource);
+            if (!attribution) return null;
+            return (
+              <p className="pt-1 text-[10px] text-text-muted">{attribution.label}</p>
+            );
+          })()}
       </div>
     </Link>
   );

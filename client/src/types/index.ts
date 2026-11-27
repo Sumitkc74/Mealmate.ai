@@ -74,6 +74,10 @@ export interface Recipe {
   difficulty: Difficulty;
   nutrition?: Nutrition;
   imageUrl?: string;
+  /** Where the photo came from: 'wikimedia' (CC-licensed), 'pollinations'
+   *  (AI-generated), or 'user' (pasted by the author). Recorded by the
+   *  server at write time, before the image cache rewrites the URL. */
+  imageSource?: 'wikimedia' | 'pollinations' | 'user';
   /** Provenance: 'seed' for bundled recipes, 'user' for ones you authored,
    *  'ai-generated' for recipes drafted by the AI chat / planner picker. */
   source?: string;

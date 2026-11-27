@@ -59,6 +59,29 @@ describe('Recipe routes', () => {
     expect(res.body.recipe.totalTime).toBe(15);
   });
 
+  it('records the image source from the image URL host', async () => {
+    const wikimedia = await request(app)
+      .post('/api/recipes')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...baseRecipe, title: 'Wiki Dish', imageUrl: 'https://upload.wikimedia.org/wikipedia/commons/1/2/dish.jpg' });
+    expect(wikimedia.status).toBe(201);
+    expect(wikimedia.body.recipe.imageSource).toBe('wikimedia');
+
+    const pollinations = await request(app)
+      .post('/api/recipes')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...baseRecipe, title: 'Pollinations Dish', imageUrl: 'https://image.pollinations.ai/prompt/a%20bowl%20of%20soup' });
+    expect(pollinations.status).toBe(201);
+    expect(pollinations.body.recipe.imageSource).toBe('pollinations');
+
+    const userUrl = await request(app)
+      .post('/api/recipes')
+      .set('Authorization', `Bearer ${token}`)
+      .send(baseRecipe);
+    expect(userUrl.status).toBe(201);
+    expect(userUrl.body.recipe.imageSource).toBe('user');
+  });
+
   it('rejects a recipe without an image', async () => {
     const { imageUrl, ...noImageRecipe } = baseRecipe;
     expect(imageUrl).toBeTruthy();

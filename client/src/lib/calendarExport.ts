@@ -149,12 +149,12 @@ export function generateIcsString(
       }
     }
     if (ev.recipeId) {
-      desc += `\n🔗 View Recipe: https://mealmate.ai/recipes/${ev.recipeId}`;
+      desc += `\n🔗 View Recipe: https://mealmate-ai-three.vercel.app/recipes/${ev.recipeId}`;
     }
 
     lines.push(
       'BEGIN:VEVENT',
-      `UID:mealmate-${Date.now()}-${idx}-${start.getTime()}@mealmate.ai`,
+      `UID:mealmate-${Date.now()}-${idx}-${start.getTime()}@mealmate-ai-three.vercel.app`,
       `DTSTAMP:${nowStr}`,
       `DTSTART:${formatIcsDate(start)}`,
       `DTEND:${formatIcsDate(end)}`,

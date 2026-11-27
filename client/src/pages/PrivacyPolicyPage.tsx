@@ -9,7 +9,7 @@ export function PrivacyPolicyPage() {
       'Learn how MealMate collects, protects, and handles your pantry data, dietary preferences, and account security in compliance with GDPR privacy frameworks.',
   });
 
-  const lastUpdated = 'September 28, 2026';
+  const lastUpdated = 'November 26, 2026';
 
   return (
     <div className="mx-auto max-w-4xl py-6 space-y-10 text-ink">
@@ -20,7 +20,7 @@ export function PrivacyPolicyPage() {
           Privacy Policy
         </h1>
         <p className="text-sm text-ink-soft">
-          Last Updated: <time dateTime="2026-09-28">{lastUpdated}</time> · Version 1.2
+          Last Updated: <time dateTime="2026-11-26">{lastUpdated}</time> · Version 1.3
         </p>
         <p className="text-sm text-ink-soft leading-relaxed max-w-3xl">
           At MealMate, we believe privacy is a fundamental human right. This Privacy Policy outlines what information we collect, the specific lawful bases and purposes for collecting it, how it is secured, and how you can exercise your statutory rights under the General Data Protection Regulation (GDPR), California Consumer Privacy Act / California Privacy Rights Act (CCPA/CPRA), and the Children's Online Privacy Protection Act (COPPA).
@@ -40,7 +40,7 @@ export function PrivacyPolicyPage() {
             <span><strong>Sensitive Dietary Data:</strong> Your allergy and dietary details are processed exclusively based on your explicit consent to provide safe recipe filtering.</span>
           </li>
           <li className="flex items-start gap-2">
-            <span><strong>AI Training Exclusions:</strong> Your private fridge photos and recipes are not used to train public foundation models without permission.</span>
+            <span><strong>AI Training:</strong> MealMate runs on Google&apos;s free Gemini tier. Google may sample the prompts we send for AI features — including fridge photos and recipe text — to improve its models. We never sell your data, and we send it to no other trainer.</span>
           </li>
           <li className="flex items-start gap-2">
             <span><strong>Self-Service Erasure &amp; Export:</strong> You can download your entire data archive in JSON or permanently delete your account at any time in your <Link to="/privacy/manage" className="underline font-semibold text-brand-700">Privacy Management Dashboard</Link>.</span>
@@ -69,26 +69,14 @@ export function PrivacyPolicyPage() {
       <section id="controller" className="space-y-3">
         <h2 className="font-serif text-2xl font-semibold text-ink">1. Data Controller &amp; Contact Information</h2>
         <p className="text-sm text-ink-soft leading-relaxed">
-          The data controller responsible for your personal information is MealMate (operated for the CS628 research project team at City University of Seattle). For any privacy-related inquiries, Data Protection Officer (DPO) requests, or rights fulfillment, please contact us at:
+          The data controller responsible for your personal information is MealMate (operated for the CS628 research project team at City University of Seattle). For any privacy-related inquiries or rights fulfillment, please contact us at:
         </p>
         <div className="rounded-xl border border-line bg-card p-4 text-xs font-mono text-ink space-y-1">
-          <div className="font-semibold font-sans">MealMate Privacy Operations</div>
+          <div className="font-semibold font-sans">MealMate Privacy Contact</div>
           <div>
             Email:{' '}
-            <a href="mailto:privacy@mealmate.ai" className="text-terracotta hover:underline">
-              privacy@mealmate.ai
-            </a>
-          </div>
-          <div>
-            Data Protection Officer:{' '}
-            <a href="mailto:dpo@mealmate.ai" className="text-terracotta hover:underline">
-              dpo@mealmate.ai
-            </a>
-          </div>
-          <div>
-            Direct Support Line:{' '}
-            <a href="tel:+12066241688" className="text-terracotta hover:underline">
-              +1 (206) 624-1688
+            <a href="mailto:mealmate.ai1@gmail.com" className="text-terracotta hover:underline">
+              mealmate.ai1@gmail.com
             </a>
           </div>
           <div className="text-ink-mute pt-1">City University of Seattle · CS628 Team T03</div>
@@ -169,8 +157,8 @@ export function PrivacyPolicyPage() {
               </tr>
               <tr>
                 <td className="p-3 font-medium text-ink">Fridge Photos</td>
-                <td className="p-3">Extracts ingredient names via computer vision. Immediately discarded after processing.</td>
-                <td className="p-3">Processed via Google Gemini / Azure Vision API. Not retained for public training.</td>
+                <td className="p-3">Extracts ingredient names via computer vision. Immediately discarded by MealMate after processing.</td>
+                <td className="p-3">Processed via Google Gemini (free tier). Google may sample these prompts to improve its models.</td>
               </tr>
               <tr>
                 <td className="p-3 font-medium text-ink">Email &amp; Name</td>
@@ -186,12 +174,13 @@ export function PrivacyPolicyPage() {
       <section id="subprocessors" className="space-y-3">
         <h2 className="font-serif text-2xl font-semibold text-ink">5. Third-Party Service Providers &amp; AI Sub-Processors</h2>
         <p className="text-sm text-ink-soft leading-relaxed">
-          We partner with enterprise cloud providers bound by Data Processing Agreements (DPAs) incorporating standard contractual clauses:
+          Your data is processed by the following third-party providers. MealMate is a student research project and has no signed Data Processing Agreements (DPAs) or standard contractual clauses with them:
         </p>
         <ul className="list-disc pl-5 space-y-1 text-sm text-ink-soft">
           <li><strong>Database Storage:</strong> MongoDB Atlas (AES-256 encrypted at rest, TLS 1.3 in transit).</li>
-          <li><strong>Generative AI &amp; Vision:</strong> Google Gemini API / Azure OpenAI. Prompts containing dietary contexts are processed in enterprise API mode under zero-retention or transient memory agreements and are not used to train global public models.</li>
-          <li><strong>Infrastructure:</strong> Docker containerized microservices hosted in secure ISO/IEC 27001 certified data centers.</li>
+          <li><strong>Generative AI &amp; Vision:</strong> Google Gemini API, free tier. Prompts containing dietary contexts and fridge photos are sent to Google for inference. On the free tier, Google may sample prompts to improve its models; MealMate does not use a paid or enterprise tier with a no-training guarantee.</li>
+          <li><strong>Hosting:</strong> Vercel (web frontend) and Render (API and AI services).</li>
+          <li><strong>Email:</strong> Resend, used only to send account emails (password resets, deletion requests) from MealMate.</li>
         </ul>
       </section>
 
@@ -199,7 +188,7 @@ export function PrivacyPolicyPage() {
       <section id="retention" className="space-y-3">
         <h2 className="font-serif text-2xl font-semibold text-ink">6. Data Retention &amp; Automated Deletion</h2>
         <p className="text-sm text-ink-soft leading-relaxed">
-          We retain your personal data only as long as your account remains active. When you delete your account via the <Link to="/privacy/manage" className="text-brand-700 underline font-medium">Privacy Management Dashboard</Link> or send a deletion request to <code className="text-xs bg-canvas-soft px-1.5 py-0.5 rounded">privacy@mealmate.ai</code>, our backend automatically executes a cascade deletion:
+          We retain your personal data only as long as your account remains active. When you delete your account via the <Link to="/privacy/manage" className="text-brand-700 underline font-medium">Privacy Management Dashboard</Link> or send a deletion request to <code className="text-xs bg-canvas-soft px-1.5 py-0.5 rounded">mealmate.ai1@gmail.com</code>, our backend automatically executes a cascade deletion:
         </p>
         <ul className="list-disc pl-5 space-y-1 text-xs text-ink-soft">
           <li>Your user account record and authentication credentials are permanently deleted.</li>
@@ -243,7 +232,7 @@ export function PrivacyPolicyPage() {
       <section id="children" className="space-y-3">
         <h2 className="font-serif text-2xl font-semibold text-ink">8. Children's Privacy (COPPA &amp; Age Restriction)</h2>
         <p className="text-sm text-ink-soft leading-relaxed">
-          MealMate is strictly intended for individuals aged <strong className="font-semibold text-ink">13 or older</strong> (or 16 in the European Economic Area and United Kingdom). We do not knowingly collect or solicit personal information from children under 13 in compliance with the Children's Online Privacy Protection Act (COPPA). If we learn that we have inadvertently collected personal data from a child under the required age, we will immediately delete that information. Parents or guardians who believe their child has registered can contact us at <a href="mailto:privacy@mealmate.ai" className="text-terracotta hover:underline font-mono text-xs bg-canvas-soft px-1.5 py-0.5 rounded">privacy@mealmate.ai</a>.
+          MealMate is strictly intended for individuals aged <strong className="font-semibold text-ink">13 or older</strong> (or 16 in the European Economic Area and United Kingdom). We do not knowingly collect or solicit personal information from children under 13 in compliance with the Children's Online Privacy Protection Act (COPPA). If we learn that we have inadvertently collected personal data from a child under the required age, we will immediately delete that information. Parents or guardians who believe their child has registered can contact us at <a href="mailto:mealmate.ai1@gmail.com" className="text-terracotta hover:underline font-mono text-xs bg-canvas-soft px-1.5 py-0.5 rounded">mealmate.ai1@gmail.com</a>.
         </p>
       </section>
 

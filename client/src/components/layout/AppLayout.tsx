@@ -53,16 +53,9 @@ export function AppLayout() {
 
         <div className="mx-auto max-w-2xl text-xs text-ink-soft flex flex-wrap items-center justify-center gap-3">
           <span>
-            Support:{' '}
-            <a href="mailto:support@mealmate.ai" className="text-terracotta hover:underline">
-              support@mealmate.ai
-            </a>
-          </span>
-          <span className="text-line-strong">·</span>
-          <span>
-            Phone:{' '}
-            <a href="tel:+12066241688" className="text-terracotta hover:underline font-mono">
-              +1 (206) 624-1688
+            Contact:{' '}
+            <a href="mailto:mealmate.ai1@gmail.com" className="text-terracotta hover:underline">
+              mealmate.ai1@gmail.com
             </a>
           </span>
         </div>

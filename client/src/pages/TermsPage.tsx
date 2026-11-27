@@ -6,10 +6,10 @@ export function TermsPage() {
   usePageMetadata({
     title: 'Terms of Service | MealMate',
     description:
-      'Review the MealMate terms of service governing user accounts, algorithmic meal recommendations, educational research prototypes, and billing policies.',
+      'Review the MealMate terms of service governing user accounts, algorithmic meal recommendations, and educational research prototypes.',
   });
 
-  const lastUpdated = 'September 28, 2026';
+  const lastUpdated = 'November 26, 2026';
 
   return (
     <div className="mx-auto max-w-4xl py-6 space-y-10 text-ink">
@@ -20,7 +20,7 @@ export function TermsPage() {
           Terms of Service
         </h1>
         <p className="text-sm text-ink-soft">
-          Last Updated: <time dateTime="2026-09-28">{lastUpdated}</time> · Version 1.2
+          Last Updated: <time dateTime="2026-11-26">{lastUpdated}</time> · Version 1.3
         </p>
         <p className="text-sm text-ink-soft leading-relaxed max-w-3xl">
           Welcome to MealMate. Please read these Terms of Service carefully before creating an account or using our meal-planning platform, AI assistant, and recommender services.
@@ -72,7 +72,7 @@ export function TermsPage() {
         <div className="space-y-3">
           <h2 className="font-serif text-2xl font-semibold text-ink">3. User Accounts &amp; Security</h2>
           <p>
-            When registering, you agree to provide accurate, current, and complete registration information. You are responsible for safeguarding your login credentials. You must notify us immediately at <code className="text-xs bg-canvas-soft px-1.5 py-0.5 rounded">security@mealmate.ai</code> if you suspect unauthorized access to your account.
+            When registering, you agree to provide accurate, current, and complete registration information. You are responsible for safeguarding your login credentials. You must notify us immediately at <a href="mailto:mealmate.ai1@gmail.com" className="text-terracotta hover:underline font-mono bg-canvas-soft px-1.5 py-0.5 rounded">mealmate.ai1@gmail.com</a> if you suspect unauthorized access to your account.
           </p>
         </div>
 
@@ -111,28 +111,10 @@ export function TermsPage() {
 
         {/* Section 6 */}
         <div className="space-y-3">
-          <h2 className="font-serif text-2xl font-semibold text-ink">6. Subscriptions, Billing, Cancellation &amp; Refund Policy</h2>
-          <p>MealMate provides free research prototype access and optional premium subscription tiers:</p>
-          <div className="space-y-2 text-xs">
-            <div className="border border-line rounded-xl p-3 bg-card">
-              <h4 className="font-semibold text-ink">Cancellation Terms</h4>
-              <p className="mt-1">
-                You may cancel your subscription at any time through your account settings. Upon cancellation, your subscription remains active until the end of your current paid billing period, with no subsequent recurring charges.
-              </p>
-            </div>
-            <div className="border border-line rounded-xl p-3 bg-card">
-              <h4 className="font-semibold text-ink">14-Day Statutory Right of Withdrawal (EU / UK Consumers)</h4>
-              <p className="mt-1">
-                If you are a consumer in the European Union or United Kingdom, you have the statutory right to withdraw from a purchase within 14 days without giving any reason. To exercise this right, contact <a href="mailto:billing@mealmate.ai" className="text-terracotta hover:underline font-mono bg-canvas-soft px-1 py-0.5 rounded">billing@mealmate.ai</a> within 14 days of subscription inception for a full refund.
-              </p>
-            </div>
-            <div className="border border-line rounded-xl p-3 bg-card">
-              <h4 className="font-semibold text-ink">Standard Refund Policy</h4>
-              <p className="mt-1">
-                Except where required by law, monthly subscription fees are non-refundable once the billing cycle begins. For annual subscriptions, refund requests submitted within 30 calendar days of payment will be granted on a pro-rata basis for unused months.
-              </p>
-            </div>
-          </div>
+          <h2 className="font-serif text-2xl font-semibold text-ink">6. Free Service — No Fees, No Refunds</h2>
+          <p>
+            MealMate is a free research prototype. There are no subscription tiers, no fees, and no payment flow: you are never charged for using the Service, so there is nothing to cancel and no refund to claim. If a paid tier is ever introduced, these Terms will be updated before any charge is made.
+          </p>
         </div>
 
         {/* Section 7 */}
@@ -163,7 +145,7 @@ export function TermsPage() {
         <div className="space-y-3">
           <h2 className="font-serif text-2xl font-semibold text-ink">10. Contact Us</h2>
           <p className="text-xs">
-            For questions regarding these Terms, contact our legal desk at <a href="mailto:legal@mealmate.ai" className="text-terracotta hover:underline font-mono bg-canvas-soft px-1.5 py-0.5 rounded">legal@mealmate.ai</a> or call our direct project support line at <a href="tel:+12066241688" className="text-terracotta hover:underline font-mono bg-canvas-soft px-1.5 py-0.5 rounded">+1 (206) 624-1688</a>.
+            For questions regarding these Terms, contact us at <a href="mailto:mealmate.ai1@gmail.com" className="text-terracotta hover:underline font-mono bg-canvas-soft px-1.5 py-0.5 rounded">mealmate.ai1@gmail.com</a>.
           </p>
         </div>
       </section>

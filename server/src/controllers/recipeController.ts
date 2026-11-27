@@ -7,6 +7,7 @@ import { asyncHandler } from '../utils/asyncHandler';
 import { User } from '../models/User';
 import { generateRecipeWithRetry, saveGeneratedRecipe } from '../services/chatActions';
 import { verifyRecipe, assertRecipeSafe, estimateNutrition, applyVerificationTag } from '../services/recipeVerifier';
+import { deriveImageSource } from '../utils/imageSource';
 import type { VerifyRecipeResponse } from '../services/aiClient';
 import type {
   CreateRecipeInput,
@@ -73,6 +74,7 @@ export const createRecipe = asyncHandler<unknown, unknown, CreateRecipeInput>(
     const verification = await assertRecipeSafe(req.body);
     const recipe = await Recipe.create({
       ...req.body,
+      imageSource: deriveImageSource(req.body.imageUrl),
       tags: applyVerificationTag(req.body.tags, verification.verdict),
       source: 'user',
       aiReviewPending: verification.aiUnavailable === true,
@@ -102,6 +104,7 @@ export const bulkCreateRecipes = asyncHandler<unknown, unknown, BulkCreateRecipe
       i++;
       const doc = await Recipe.create({
         ...r,
+        imageSource: deriveImageSource(r.imageUrl),
         tags: applyVerificationTag(r.tags, verification?.verdict),
         source: 'user',
         aiReviewPending: verification?.aiUnavailable === true,
@@ -256,6 +259,11 @@ export const updateRecipe = asyncHandler<{ id: string }, unknown, UpdateRecipeIn
     const verification = await assertRecipeSafe(candidate);
 
     Object.assign(recipe, req.body);
+    // Re-derive the image source when the image changed; a new remote URL
+    // carries its origin, a cached local path keeps the previous value.
+    if (req.body.imageUrl !== undefined) {
+      recipe.imageSource = deriveImageSource(req.body.imageUrl) ?? recipe.imageSource;
+    }
     if (isCommunity) {
       recipe.createdBy = new Types.ObjectId(req.user.sub);
     }

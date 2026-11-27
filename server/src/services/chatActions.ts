@@ -23,6 +23,7 @@ import { aggregateGroceryItems, collectRecipesFromPlan } from '../utils/groceryA
 import { findAllergyConflict } from '../utils/allergens';
 import { broadcastMealPlan } from './realtime';
 import { cacheOrPassthrough } from './imageCache';
+import { deriveImageSource } from '../utils/imageSource';
 import { generateRecipe, type GeneratedRecipe } from './aiClient';
 import { logger } from '../config/logger';
 
@@ -385,6 +386,9 @@ export async function saveGeneratedRecipe(
     const existing = await Recipe.findOne({ slug });
     if (existing) return existing as IRecipe & { _id: Types.ObjectId };
 
+    // Derive the image source from the ORIGINAL url before caching
+    // rewrites it to a local path (which carries no origin).
+    const imageSource = deriveImageSource(gen.image_url ?? null);
     const imageUrl = await cacheOrPassthrough(gen.image_url ?? null);
     // Recipes without images are not accepted: if no image could be
     // produced or cached, the generate fails instead of saving imageless.
@@ -414,6 +418,7 @@ export async function saveGeneratedRecipe(
         sodium: gen.nutrition?.sodium ?? undefined,
       },
       imageUrl: imageUrl ?? undefined,
+      imageSource,
       source: gen.source ?? 'ai-generated',
       difficulty: gen.difficulty ?? 'medium',
       createdBy: new Types.ObjectId(userId),

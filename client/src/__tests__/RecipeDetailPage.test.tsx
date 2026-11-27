@@ -281,3 +281,36 @@ describe('RecipeDetailPage guest browsing', () => {
   });
 });
 
+
+describe('RecipeDetailPage image attribution', () => {
+  it('shows Wikimedia attribution for a recorded Wikimedia source', async () => {
+    mockedGet.mockReset();
+    mockedGet.mockResolvedValue({
+      data: {
+        recipe: {
+          ...mockRecipe,
+          imageUrl: '/static/recipe-images/abc.jpg',
+          imageSource: 'wikimedia',
+        },
+      },
+    });
+    renderPage();
+    expect(await screen.findByText(/Wikimedia Commons/)).toBeInTheDocument();
+  });
+
+  it('shows no attribution for a user-provided image', async () => {
+    mockedGet.mockReset();
+    mockedGet.mockResolvedValue({
+      data: {
+        recipe: {
+          ...mockRecipe,
+          imageUrl: 'https://example.com/dish.jpg',
+          imageSource: 'user',
+        },
+      },
+    });
+    renderPage();
+    await screen.findByRole('img', { name: 'Garlic Butter Pasta' });
+    expect(screen.queryByText(/Wikimedia|Pollinations|cached by MealMate/)).not.toBeInTheDocument();
+  });
+});

@@ -89,4 +89,31 @@ describe('RecipeCard images', () => {
     expect(screen.queryByRole('img', { name: 'Chicken Biryani' })).not.toBeInTheDocument();
     expect(screen.getByText('Recipe preview')).toBeInTheDocument();
   });
+
+  it('shows Wikimedia attribution for a recorded Wikimedia source', () => {
+    render(
+      <MemoryRouter>
+        <RecipeCard recipe={{ ...biryani('/static/recipe-images/abc.jpg'), imageSource: 'wikimedia' }} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText(/Wikimedia Commons/)).toBeInTheDocument();
+  });
+
+  it('shows Pollinations attribution derived from the image URL', () => {
+    render(
+      <MemoryRouter>
+        <RecipeCard recipe={biryani('https://image.pollinations.ai/prompt/a%20bowl%20of%20soup')} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText(/Pollinations\.AI/)).toBeInTheDocument();
+  });
+
+  it('shows no attribution for a user-provided image', () => {
+    render(
+      <MemoryRouter>
+        <RecipeCard recipe={biryani('https://images.unsplash.com/photo-1645112411341-6c4fd023714a')} />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByText(/Wikimedia|Pollinations|cached by MealMate/)).not.toBeInTheDocument();
+  });
 });
